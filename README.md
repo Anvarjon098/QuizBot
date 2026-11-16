@@ -164,9 +164,9 @@ Skript botni `/opt/quizbot` papkasiga o'rnatadi va `quizbot` systemd xizmatini y
 
 | Buyruq | Vazifasi |
 |---|---|
-| `journalctl -u quizbot -f` | jurnal |
-| `systemctl restart quizbot` | qayta ishga tushirish |
-| `systemctl stop quizbot` | to'xtatish |
+| `journalctl -u quizbot -f` yoki `tail -f /opt/quizbot/bot.log` | jurnal (systemd bor/yo‘q) |
+| `bash /opt/quizbot/deploy/restart.sh` | qayta ishga tushirish |
+
 | `bash /opt/quizbot/deploy/update_vps.sh` | yangi kodni yuklab, qayta ishga tushirish |
 
 ### Bazani ko'chirish

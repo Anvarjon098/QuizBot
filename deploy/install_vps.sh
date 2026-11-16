@@ -38,8 +38,23 @@ fi
 chown -R quizbot:quizbot "$DIR"
 chmod 600 "$DIR/.env"
 
-echo "==> 5/5 Xizmat yaratilmoqda..."
-cat > /etc/systemd/system/$SERVICE.service <<UNIT
+echo "==> 5/5 Bot ishga tushirilmoqda..."
+cat > "$DIR/deploy/run.sh" <<'RUN'
+#!/usr/bin/env bash
+# systemd bo'lmagan serverlar uchun: bot yiqilsa, 5 soniyadan keyin qayta yonadi.
+DIR="/opt/quizbot"
+cd "$DIR"
+while true; do
+  echo "--- $(date '+%F %T') bot ishga tushmoqda" >> "$DIR/bot.log"
+  "$DIR/.venv/bin/python" -m bot >> "$DIR/bot.log" 2>&1
+  sleep 5
+  [ "$(stat -c %s "$DIR/bot.log")" -gt 5000000 ] && tail -n 2000 "$DIR/bot.log" > "$DIR/bot.log.tmp" && mv "$DIR/bot.log.tmp" "$DIR/bot.log"
+done
+RUN
+chmod +x "$DIR/deploy/run.sh"; chown quizbot:quizbot "$DIR/deploy/run.sh"
+
+if [ -d /run/systemd/system ]; then
+  cat > /etc/systemd/system/$SERVICE.service <<UNIT
 [Unit]
 Description=QuizBot (Telegram)
 After=network-online.target
@@ -55,13 +70,33 @@ RestartSec=5
 [Install]
 WantedBy=multi-user.target
 UNIT
-systemctl daemon-reload
-systemctl enable --now $SERVICE
-sleep 3
-systemctl --no-pager status $SERVICE | head -n 5
-
-echo
-echo "✅ Bot ishga tushdi va server qayta yonganda ham avtomatik ishlaydi."
-echo "   Jurnal:        journalctl -u $SERVICE -f"
-echo "   Qayta yoqish:  systemctl restart $SERVICE"
+  systemctl daemon-reload
+  systemctl enable --now $SERVICE
+  sleep 3
+  systemctl --no-pager status $SERVICE | head -n 5
+  echo
+  echo "✅ Bot ishga tushdi va server qayta yonganda ham avtomatik ishlaydi."
+  echo "   Jurnal:        journalctl -u $SERVICE -f"
+  echo "   Qayta yoqish:  systemctl restart $SERVICE"
+else
+  # systemd yo'q (konteyner) — fon jarayoni + qayta yonganda avtomatik ishga tushirish
+  pkill -f "quizbot/deploy/run.sh" 2>/dev/null || true
+  pkill -f "python -m bot" 2>/dev/null || true
+  sleep 1
+  su -s /bin/bash quizbot -c "nohup $DIR/deploy/run.sh >/dev/null 2>&1 &"
+  BOOT_LINE="@reboot su -s /bin/bash quizbot -c 'nohup $DIR/deploy/run.sh >/dev/null 2>&1 &'"
+  if command -v crontab >/dev/null || apt-get install -y cron >/dev/null 2>&1; then
+    ( crontab -l 2>/dev/null | grep -v "quizbot/deploy/run.sh"; echo "$BOOT_LINE" ) | crontab -
+    service cron start >/dev/null 2>&1 || cron 2>/dev/null || true
+  fi
+  # zaxira: root SSH orqali kirganda bot ishlamayotgan bo'lsa, o'zi yonadi
+  grep -q "quizbot/deploy/run.sh" /root/.bashrc 2>/dev/null || \
+    echo "pgrep -f quizbot/deploy/run.sh >/dev/null || su -s /bin/bash quizbot -c 'nohup $DIR/deploy/run.sh >/dev/null 2>&1 &'" >> /root/.bashrc
+  sleep 8
+  tail -n 3 "$DIR/bot.log" 2>/dev/null || true
+  echo
+  echo "✅ Bot fonda ishga tushdi."
+  echo "   Jurnal:        tail -f $DIR/bot.log"
+  echo "   Qayta yoqish:  bash $DIR/deploy/restart.sh"
+fi
 echo "   Yangilash:     bash $DIR/deploy/update_vps.sh"
