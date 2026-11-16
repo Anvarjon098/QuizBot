@@ -131,3 +131,25 @@ tests/            — pytest testlari
 pip install pytest==8.3.5 pytest-asyncio==0.25.3
 python -m pytest -q
 ```
+
+## 📱 Android telefonni server qilib ishlatish (Termux)
+
+1. **Termux** va **Termux:Boot** ilovalarini **F-Droid**'dan o'rnating (Play Market'dagi Termux eskirgan).
+2. Telefonda **Termux:Boot** ilovasini bir marta oching.
+3. *Sozlamalar → Ilovalar → Termux → Batareya* bo'limida **«Cheklanmagan»** (batareya optimallashtirishsiz) rejimini tanlang.
+4. Eski testlar kerak bo'lsa, `quizbot.db` faylini telefondagi **Download** papkasiga saqlang.
+5. Termux'da quyidagini yozing (tokenni so'raydi, 10–20 daqiqa davom etadi):
+   ```bash
+   pkg install -y curl && curl -fsSL https://raw.githubusercontent.com/Anvarjon098/QuizBot/claude/claude-qhb9qq/termux/install.sh -o install.sh && bash install.sh
+   ```
+6. Botni ishga tushirish: `bash ~/QuizBot/termux/start.sh`
+
+| Buyruq | Vazifasi |
+|---|---|
+| `bash ~/QuizBot/termux/start.sh` | botni fonda ishga tushirish |
+| `bash ~/QuizBot/termux/stop.sh` | botni to'xtatish |
+| `bash ~/QuizBot/termux/update.sh` | yangi kodni yuklab, qayta ishga tushirish |
+| `tail -f ~/QuizBot/bot.log` | jurnalni ko'rish |
+
+Bot yiqilsa yoki internet uzilsa — o'zi qayta yonadi; telefon qayta yoqilganda Termux:Boot uni avtomatik ishga tushiradi.
+⚠️ Bitta token bilan bot faqat **bitta** joyda ishlashi mumkin.
