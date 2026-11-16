@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS users (
     username    TEXT,
     full_name   TEXT NOT NULL DEFAULT '',
     can_message INTEGER NOT NULL DEFAULT 0,
+    menu_cleared INTEGER NOT NULL DEFAULT 1,
     joined_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE TABLE IF NOT EXISTS quizzes (
@@ -85,6 +86,7 @@ class Database:
         await self._conn.execute("PRAGMA foreign_keys = ON")
         await self._conn.execute("PRAGMA journal_mode = WAL")
         await self._conn.executescript(SCHEMA)
+        await self._migrate()
         await self._conn.commit()
 
     async def close(self) -> None:
@@ -97,7 +99,7 @@ class Database:
     async def upsert_user(self, user: User, private: bool) -> None:
         await self.conn.execute(
             """
-            INSERT INTO users (id, username, full_name, can_message) VALUES (?, ?, ?, ?)
+            INSERT INTO users (id, username, full_name, can_message, menu_cleared) VALUES (?, ?, ?, ?, 1)
             ON CONFLICT(id) DO UPDATE SET
                 username = excluded.username,
                 full_name = excluded.full_name,
@@ -109,6 +111,23 @@ class Database:
 
     async def set_can_message(self, user_id: int, value: bool) -> None:
         await self.conn.execute("UPDATE users SET can_message = ? WHERE id = ?", (int(value), user_id))
+        await self.conn.commit()
+
+    async def _migrate(self) -> None:
+        cur = await self.conn.execute("PRAGMA table_info(users)")
+        columns = {r["name"] for r in await cur.fetchall()}
+        if "menu_cleared" not in columns:
+            # Eski foydalanuvchilarda eski menyu tugmalari qolgan bo'lishi mumkin -> 0
+            await self.conn.execute("ALTER TABLE users ADD COLUMN menu_cleared INTEGER NOT NULL DEFAULT 0")
+
+    async def users_with_old_menu(self, admin_ids: frozenset[int]) -> list[int]:
+        cur = await self.conn.execute(
+            "SELECT id FROM users WHERE can_message = 1 AND menu_cleared = 0"
+        )
+        return [r["id"] for r in await cur.fetchall() if r["id"] not in admin_ids]
+
+    async def mark_menu_cleared(self, user_id: int) -> None:
+        await self.conn.execute("UPDATE users SET menu_cleared = 1 WHERE id = ?", (user_id,))
         await self.conn.commit()
 
     async def messageable_user_ids(self) -> list[int]:

@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from html import escape
 
 from aiogram import Bot
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, PollAnswer
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, PollAnswer, ReplyKeyboardRemove
 
 from .db import Database
 from .keyboards import PlayCB, group_link, share_link
@@ -142,6 +142,9 @@ class QuizManager:
                 f"🏁 <b>{escape(s.quiz.title)}</b> testi boshlanmoqda!\n"
                 f"🖊 {len(s.questions)} ta savol · ⏱ har biriga {s.quiz.open_period} soniya\n\n"
                 f"To'xtatish uchun: /stop",
+                # oddiy foydalanuvchida eski menyu tugmalari qolgan bo'lsa, olib tashlanadi
+                reply_markup=ReplyKeyboardRemove()
+                if not s.is_group and s.launcher_id not in self.admin_ids else None,
             )
             await asyncio.sleep(2)
             total = len(s.questions)

@@ -137,3 +137,25 @@ async def test_manual_stop_and_duplicate_answers(db, monkeypatch):
     assert "to'xtatildi" in bot.sent[-1] and "U7" in bot.sent[-1]
     board = await db.quiz_leaderboard(quiz.id)
     assert [(r["user_id"], r["score"], r["total"]) for r in board] == [(7, 1, 1), (8, 0, 1)]
+
+
+async def test_old_menu_cleanup_migration(tmp_path):
+    import sqlite3
+    path = str(tmp_path / "old.db")
+    # cheklovlardan oldingi sxema: menu_cleared ustuni yo'q
+    con = sqlite3.connect(path)
+    con.execute("CREATE TABLE users (id INTEGER PRIMARY KEY, username TEXT, full_name TEXT NOT NULL DEFAULT '',"
+                " can_message INTEGER NOT NULL DEFAULT 0, joined_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)")
+    con.executemany("INSERT INTO users (id, can_message) VALUES (?, ?)", [(1, 1), (2, 1), (3, 0)])
+    con.commit(); con.close()
+
+    d = Database(path)
+    await d.connect()
+    try:
+        assert await d.users_with_old_menu(frozenset({1})) == [2]   # admin va guruhdagilar kirmaydi
+        await d.upsert_user(user(4, "Yangi"), private=True)          # yangi foydalanuvchida eski menyu yo'q
+        assert await d.users_with_old_menu(frozenset({1})) == [2]
+        await d.mark_menu_cleared(2)
+        assert await d.users_with_old_menu(frozenset({1})) == []
+    finally:
+        await d.close()

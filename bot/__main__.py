@@ -8,7 +8,8 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.types import BotCommand, BotCommandScopeChat, BotCommandScopeDefault
+from aiogram.exceptions import TelegramForbiddenError
+from aiogram.types import BotCommand, BotCommandScopeChat, BotCommandScopeDefault, ReplyKeyboardRemove
 
 from .config import load_config
 from .db import Database
@@ -52,6 +53,24 @@ async def setup_commands(bot: Bot, admin_ids: frozenset[int]) -> None:
             logging.warning("Admin %s uchun buyruqlar menyusini o'rnatib bo'lmadi", admin_id)
 
 
+async def clear_old_menus(bot: Bot, db: Database, admin_ids: frozenset[int]) -> None:
+    """Cheklovlardan oldin kirgan oddiy foydalanuvchilarning eski menyu tugmalarini bir marta o'chiradi."""
+    for user_id in await db.users_with_old_menu(admin_ids):
+        try:
+            await bot.send_message(
+                user_id,
+                "🔄 Bot yangilandi. Testni ishlash uchun sizga yuborilgan test havolasini oching.",
+                reply_markup=ReplyKeyboardRemove(),
+            )
+        except TelegramForbiddenError:
+            await db.set_can_message(user_id, False)
+        except Exception:
+            logging.exception("Foydalanuvchi %s menyusini tozalab bo'lmadi", user_id)
+            continue
+        await db.mark_menu_cleared(user_id)
+        await asyncio.sleep(0.05)
+
+
 async def main() -> None:
     logging.basicConfig(
         level=logging.INFO,
@@ -69,6 +88,7 @@ async def main() -> None:
     dp.include_routers(play.router, common.router, admin.router, create.router, stats.router, fallback.router)
 
     await setup_commands(bot, config.admin_ids)
+    await clear_old_menus(bot, db, config.admin_ids)
     try:
         await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
     finally:
