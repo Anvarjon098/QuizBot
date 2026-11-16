@@ -299,3 +299,29 @@ async def test_update_force_stops_quizzes(env, monkeypatch):
     assert stopped == ["update"]
     assert applied == ["new0000000"]
     assert any("qayta ishga tushmoqda" in t for t in s.texts())
+
+
+async def test_admin_panel_update_and_backup_buttons(env, monkeypatch):
+    from aiogram.methods import SendDocument
+    from bot import updater
+    from bot.keyboards import AdminCB
+    _, send, press = env
+
+    s = await send("/admin")
+    kb = [b.callback_data for row in s.calls[-1].reply_markup.inline_keyboard for b in row]
+    assert AdminCB(action="upd").pack() in kb and AdminCB(action="backup").pack() in kb
+
+    s = await press(AdminCB(action="backup").pack())
+    assert any(isinstance(c, SendDocument) for c in s.calls)
+
+    async def latest():
+        return updater.Commit("same000000", "x")
+
+    monkeypatch.setattr(updater, "latest_commit", latest)
+    monkeypatch.setattr(updater, "current_version", lambda: "same000000")
+    s = await press(AdminCB(action="upd").pack())
+    assert any("eng so'nggi" in t for t in s.texts())
+
+    # mehmon uchun bu tugmalar ishlamaydi
+    s = await press(AdminCB(action="backup").pack(), user=GUEST)
+    assert not any(isinstance(c, SendDocument) for c in s.calls)

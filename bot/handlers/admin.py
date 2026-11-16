@@ -38,7 +38,9 @@ def panel_kb() -> InlineKeyboardMarkup:
     b.button(text="📢 Xabar yuborish", callback_data=AdminCB(action="bc"))
     b.button(text="📚 Testlar", callback_data=AdminCB(action="quizzes"))
     b.button(text="📥 Foydalanuvchilar (Excel)", callback_data=AdminCB(action="export"))
-    b.adjust(2, 1, 1)
+    b.button(text="🔄 Botni yangilash", callback_data=AdminCB(action="upd"))
+    b.button(text="💾 Zaxira nusxa", callback_data=AdminCB(action="backup"))
+    b.adjust(2, 1, 1, 2)
     return b.as_markup()
 
 
@@ -235,8 +237,7 @@ async def _broadcast(bot: Bot, db: Database, admin_id: int, from_chat: int, mess
 
 # ---------- zaxira nusxa: /backup va /restore ----------
 
-@router.message(StateFilter("*"), Command("backup"))
-async def backup(message: Message, db: Database) -> None:
+async def _send_backup(bot: Bot, chat_id: int, db: Database) -> None:
     import os
     import tempfile
     with tempfile.TemporaryDirectory() as tmp:
@@ -244,11 +245,23 @@ async def backup(message: Message, db: Database) -> None:
         await db.backup_to(path)
         with open(path, "rb") as f:
             data = f.read()
-    await message.answer_document(
+    await bot.send_document(
+        chat_id,
         BufferedInputFile(data, filename="quizbot.db"),
-        caption="💾 Bazaning zaxira nusxasi.\nBoshqa serverga ko'chirish: shu faylni yangi botga "
+        caption="💾 Bazaning zaxira nusxasi.\nBoshqa serverga ko'chirish yoki tiklash: shu faylni botga "
                 "<code>/restore</code> izohi bilan yuboring.",
     )
+
+
+@router.message(StateFilter("*"), Command("backup"))
+async def backup(message: Message, db: Database, bot: Bot) -> None:
+    await _send_backup(bot, message.chat.id, db)
+
+
+@router.callback_query(AdminCB.filter(F.action == "backup"))
+async def backup_cb(call: CallbackQuery, db: Database, bot: Bot) -> None:
+    await call.answer("Tayyorlanmoqda...")
+    await _send_backup(bot, call.message.chat.id, db)
 
 
 @router.message(StateFilter("*"), F.document, F.caption.regexp(r"^/restore(@\w+)?\s*$"))
@@ -313,41 +326,67 @@ async def _perform_update(bot: Bot, chat_id: int, dispatcher, manager: QuizManag
         asyncio.get_running_loop().call_later(1, lambda: asyncio.create_task(dispatcher.stop_polling()))
 
 
-@router.message(StateFilter("*"), Command("update"))
-async def update_bot(message: Message, command: CommandObject, manager: QuizManager, bot: Bot,
-                     dispatcher=None) -> None:
-    arg = (command.args or "").strip().lower()
-    chat_id = message.chat.id
+def _queued_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="⚡ Darhol yangilash", callback_data=AdminCB(action="upd_force").pack()),
+        InlineKeyboardButton(text="❎ Bekor qilish", callback_data=AdminCB(action="upd_cancel").pack()),
+    ]])
 
-    if arg in CANCEL_WORDS:
+
+async def _update_flow(bot: Bot, chat_id: int, mode: str, manager: QuizManager, dispatcher) -> None:
+    """mode: "" (kutib yangilash) | "force" | "cancel"."""
+    send = lambda text, **kw: bot.send_message(chat_id, text, **kw)  # noqa: E731
+
+    if mode == "cancel":
         if manager.on_idle is None:
-            await message.answer("Navbatda yangilanish yo'q.")
+            await send("Navbatda yangilanish yo'q.")
             return
         manager.on_idle = None
         manager.updating = False
-        await message.answer("❎ Yangilanish bekor qilindi, testlar odatdagidek boshlanaveradi.")
+        await send("❎ Yangilanish bekor qilindi, testlar odatdagidek boshlanaveradi.")
         return
 
-    force = arg in FORCE_WORDS
-    if manager.sessions and not force:
+    if manager.sessions and mode != "force":
         if manager.on_idle is not None:
-            await message.answer(f"⏳ Yangilanish allaqachon navbatda ({len(manager.sessions)} ta test ketmoqda).\n"
-                                 "Darhol: <code>/update majburiy</code> · Bekor: <code>/update bekor</code>")
+            await send(f"⏳ Yangilanish allaqachon navbatda ({len(manager.sessions)} ta test ketmoqda).",
+                       reply_markup=_queued_kb())
             return
         manager.updating = True
         manager.on_idle = lambda: _perform_update(bot, chat_id, dispatcher, manager)
-        await message.answer(
+        await send(
             f"⏳ Hozir <b>{len(manager.sessions)}</b> ta test ketmoqda. Ular tugashi bilan bot o'zi yangilanadi "
             "va sizga xabar beradi. Shu orada yangi testlar boshlanmaydi.\n\n"
-            "Darhol yangilash: <code>/update majburiy</code>\nBekor qilish: <code>/update bekor</code>"
+            "⚡ <b>Darhol yangilash</b> — testlar hozir yakunlanadi, natijalar saqlanadi.",
+            reply_markup=_queued_kb(),
         )
         return
 
     manager.updating = True
     manager.on_idle = None
     if manager.sessions:
-        await message.answer(f"⏹ {len(manager.sessions)} ta test yakunlanmoqda, natijalar saqlanadi...")
+        await send(f"⏹ {len(manager.sessions)} ta test yakunlanmoqda, natijalar saqlanadi...")
         await manager.shutdown(reason="update")
     else:
-        await message.answer("🔎 Yangilanish tekshirilmoqda...")
+        await send("🔎 Yangilanish tekshirilmoqda...")
     await _perform_update(bot, chat_id, dispatcher, manager)
+
+
+@router.message(StateFilter("*"), Command("update"))
+async def update_bot(message: Message, command: CommandObject, manager: QuizManager, bot: Bot,
+                     dispatcher=None) -> None:
+    arg = (command.args or "").strip().lower()
+    mode = "cancel" if arg in CANCEL_WORDS else "force" if arg in FORCE_WORDS else ""
+    await _update_flow(bot, message.chat.id, mode, manager, dispatcher)
+
+
+@router.callback_query(AdminCB.filter(F.action.in_({"upd", "upd_force", "upd_cancel"})))
+async def update_cb(call: CallbackQuery, callback_data: AdminCB, manager: QuizManager, bot: Bot,
+                    dispatcher=None) -> None:
+    await call.answer()
+    mode = {"upd": "", "upd_force": "force", "upd_cancel": "cancel"}[callback_data.action]
+    if mode:
+        try:
+            await call.message.edit_reply_markup(reply_markup=None)
+        except TelegramBadRequest:
+            pass
+    await _update_flow(bot, call.message.chat.id, mode, manager, dispatcher)
