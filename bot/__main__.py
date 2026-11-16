@@ -8,8 +8,8 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.exceptions import TelegramForbiddenError
-from aiogram.types import BotCommand, BotCommandScopeChat, BotCommandScopeDefault, ReplyKeyboardRemove
+from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
+from aiogram.types import ErrorEvent, BotCommand, BotCommandScopeChat, BotCommandScopeDefault, ReplyKeyboardRemove
 
 from .config import load_config
 from .db import Database
@@ -72,6 +72,16 @@ async def clear_old_menus(bot: Bot, db: Database, admin_ids: frozenset[int]) -> 
         await asyncio.sleep(0.05)
 
 
+async def on_error(event: ErrorEvent) -> bool:
+    """Bot guruhdan chiqarilgan yoki foydalanuvchi uni bloklagan bo'lsa — uzun xato o'rniga bitta qator."""
+    exc = event.exception
+    if isinstance(exc, (TelegramForbiddenError, TelegramBadRequest)):
+        logging.warning("Telegram rad etdi: %s", exc.message)
+        return True
+    logging.exception("Kutilmagan xato", exc_info=exc)
+    return True
+
+
 async def main() -> None:
     logging.basicConfig(
         level=logging.INFO,
@@ -85,6 +95,7 @@ async def main() -> None:
     bot = Bot(config.bot_token, session=make_session(), default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     dp = Dispatcher(storage=MemoryStorage(), db=db, config=config, manager=manager)
     dp.update.outer_middleware(UserMiddleware(db))
+    dp.errors.register(on_error)
     # Tartib muhim: deep link /start va /stop birinchi, keyin umumiy buyruqlar va bekor qilish.
     dp.include_routers(play.router, common.router, admin.router, create.router, stats.router, fallback.router)
 
