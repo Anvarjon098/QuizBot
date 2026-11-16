@@ -1,8 +1,11 @@
 import asyncio
 import logging
+import os
+import ssl
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
+from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import BotCommand
@@ -12,6 +15,16 @@ from .db import Database
 from .handlers import admin, common, create, play, stats
 from .middlewares import UserMiddleware
 from .runner import QuizManager
+
+
+def make_session() -> AiohttpSession:
+    """HTTPS_PROXY / SSL_CERT_FILE berilgan bo'lsa (masalan, korporativ tarmoqda), ulardan foydalanadi."""
+    proxy = os.getenv("HTTPS_PROXY") or os.getenv("https_proxy")
+    session = AiohttpSession(proxy=proxy) if proxy else AiohttpSession()
+    cafile = os.getenv("SSL_CERT_FILE")
+    if cafile:
+        session._connector_init["ssl"] = ssl.create_default_context(cafile=cafile)
+    return session
 
 
 async def main() -> None:
@@ -24,7 +37,7 @@ async def main() -> None:
     await db.connect()
     manager = QuizManager(db)
 
-    bot = Bot(config.bot_token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+    bot = Bot(config.bot_token, session=make_session(), default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     dp = Dispatcher(storage=MemoryStorage(), db=db, config=config, manager=manager)
     dp.update.outer_middleware(UserMiddleware(db))
     # Tartib muhim: deep link /start va /stop birinchi, keyin umumiy buyruqlar va bekor qilish.
