@@ -23,6 +23,12 @@
   - barcha testlarni sahifalab ko'rish va o'chirish;
   - foydalanuvchilar ro'yxatini Excel faylga yuklab olish.
 
+## Kirish huquqlari
+
+- **Adminlar** (`.env` dagi `ADMIN_IDS`) hamma funksiyalardan foydalanadi: test yaratish, import, testlarim, statistika, reyting, admin panel, guruhda o'tkazish va ulashish.
+- **Oddiy foydalanuvchilar** faqat havola orqali kirib testni ishlaydi. Ularga menyu va boshqaruv tugmalari ko'rinmaydi, test kartochkasida faqat «▶️ Testni boshlash» tugmasi bo'ladi, natijadan keyin esa faqat «🔄 Qayta ishlash» chiqadi. Buyruqlar menyusida ular faqat `/start` va `/stop` ni ko'radi.
+- Guruhda testni faqat admin boshlay oladi. Guruh a'zolari unda qatnashadi.
+
 ## O'rnatish
 
 Python 3.11 yoki undan yangi versiya kerak.

@@ -8,15 +8,15 @@ from html import escape
 from aiogram import Bot, F, Router
 from aiogram.enums import ChatType
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError, TelegramRetryAfter
-from aiogram.filters import Command, Filter, StateFilter
+from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.types import (
-    BufferedInputFile, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message, TelegramObject,
+    BufferedInputFile, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message,
 )
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-from ..config import Config
 from ..db import Database
+from ..filters import IsAdmin
 from ..keyboards import AdminCB, main_menu
 from ..runner import QuizManager
 from ..states import AdminState
@@ -25,12 +25,6 @@ from ..views import quiz_card
 
 log = logging.getLogger(__name__)
 PAGE_SIZE = 8
-
-
-class IsAdmin(Filter):
-    async def __call__(self, event: TelegramObject, config: Config) -> bool:
-        user = getattr(event, "from_user", None)
-        return bool(user and user.id in config.admin_ids)
 
 
 router = Router()

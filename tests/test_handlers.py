@@ -12,12 +12,13 @@ from aiogram.types import CallbackQuery, Chat, Message, Update, User
 
 from bot.config import Config
 from bot.db import Database
-from bot.handlers import admin, common, create, play, stats
+from bot.handlers import admin, common, create, fallback, play, stats
 from bot.middlewares import UserMiddleware
 from bot.runner import QuizManager
 
 BOT_USER = User(id=42, is_bot=True, first_name="Quiz", username="test_quiz_bot")
 ME = User(id=1, is_bot=False, first_name="Anvar")
+GUEST = User(id=2, is_bot=False, first_name="Mehmon")
 CHAT = Chat(id=1, type="private")
 
 
@@ -59,23 +60,25 @@ async def env(tmp_path):
     dp = Dispatcher(storage=MemoryStorage(), db=db, manager=QuizManager(db),
                     config=Config("42:TEST", frozenset({1}), ""))
     dp.update.outer_middleware(UserMiddleware(db))
-    routers = (play.router, common.router, admin.router, create.router, stats.router)
+    routers = (play.router, common.router, admin.router, create.router, stats.router, fallback.router)
     for r in routers:  # modul darajasidagi routerlarni oldingi testdagi dispatcher'dan ajratish
         r._parent_router = None
     dp.include_routers(*routers)
     upd = itertools.count(1)
     msg_ids = itertools.count(1)
 
-    async def send(text):
+    async def send(text, user=ME):
         session.calls.clear()
-        m = Message(message_id=next(msg_ids), date=dt.datetime.now(), chat=CHAT, from_user=ME, text=text)
+        chat = Chat(id=user.id, type="private")
+        m = Message(message_id=next(msg_ids), date=dt.datetime.now(), chat=chat, from_user=user, text=text)
         await dp.feed_update(bot, Update(update_id=next(upd), message=m))
         return session
 
-    async def press(data):
+    async def press(data, user=ME):
         session.calls.clear()
-        m = Message(message_id=999, date=dt.datetime.now(), chat=CHAT, from_user=BOT_USER, text="x")
-        cq = CallbackQuery(id="c", from_user=ME, chat_instance="i", message=m, data=data)
+        chat = Chat(id=user.id, type="private")
+        m = Message(message_id=999, date=dt.datetime.now(), chat=chat, from_user=BOT_USER, text="x")
+        cq = CallbackQuery(id="c", from_user=user, chat_instance="i", message=m, data=data)
         await dp.feed_update(bot, Update(update_id=next(upd), callback_query=cq))
         return session
 
@@ -144,3 +147,39 @@ async def test_cancel_and_help(env):
     assert "Matn formati" in s.texts()[0]
     s = await send("/stop")
     assert "hech qanday test" in s.texts()[0]
+
+
+def _buttons(call):
+    kb = getattr(call, "reply_markup", None)
+    rows = getattr(kb, "inline_keyboard", None) or []
+    return [b.text for row in rows for b in row]
+
+
+async def test_guest_can_only_take_quizzes(env):
+    db, send, press = env
+    from bot.models import Question
+    quiz = await db.create_quiz(1, "Tarix", None, 30, False, False, [Question("Savol?", ["a", "b"], 0)])
+
+    s = await send("/start", GUEST)
+    assert "sizga yuborilgan testlarni" in s.texts()[0]
+    assert type(s.calls[0].reply_markup).__name__ == "ReplyKeyboardRemove"
+
+    # yopiq funksiyalar
+    for text in ("➕ Yangi test", "📥 Fayldan import", "📚 Mening testlarim", "📊 Statistikam",
+                 "🏆 Reyting", "❓ Yordam", "/new", "/help", "/namuna", "/admin"):
+        s = await send(text, GUEST)
+        assert len(s.calls) == 1 and "faqat sizga yuborilgan" in s.texts()[0], text
+    s = await press(f"mq:stats:{quiz.id}", GUEST)
+    assert s.calls[0].show_alert and "mavjud emas" in s.calls[0].text
+    s = await press("ad:stats:0:0", GUEST)
+    assert "mavjud emas" in s.calls[0].text
+    assert await db.user_quizzes(2) == []
+
+    # havola orqali faqat «Testni boshlash» tugmasi
+    s = await send(f"/start quiz_{quiz.code}", GUEST)
+    card = s.calls[-1]
+    assert "Tarix" in card.text and _buttons(card) == ["▶️ Testni boshlash"]
+
+    # admin esa to'liq tugmalarni ko'radi
+    s = await send(f"/start quiz_{quiz.code}")
+    assert "👥 Guruhda o'tkazish" in _buttons(s.calls[-1]) and "📊 Statistika" in _buttons(s.calls[-1])

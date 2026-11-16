@@ -7,10 +7,11 @@ from aiogram import Bot, F, Router
 from aiogram.enums import ChatMemberStatus, ChatType
 from aiogram.filters import Command, CommandObject, CommandStart, StateFilter
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, Message, PollAnswer
+from aiogram.types import CallbackQuery, Message, PollAnswer, ReplyKeyboardRemove
 
+from ..config import Config
 from ..db import Database
-from ..keyboards import LobbyCB, PlayCB, lobby_kb, main_menu, owner_kb, play_kb
+from ..keyboards import LobbyCB, PlayCB, lobby_kb, main_menu, owner_kb, play_kb, start_only_kb
 from ..runner import Lobby, QuizManager
 from ..views import quiz_card
 
@@ -43,21 +44,29 @@ def _lobby_text(quiz, lobby: Lobby) -> str:
 
 @router.message(StateFilter("*"), CommandStart(deep_link=True, magic=F.args.regexp(DEEP_LINK)), PRIVATE)
 async def open_quiz_private(message: Message, command: CommandObject, state: FSMContext,
-                            db: Database, bot: Bot) -> None:
+                            db: Database, bot: Bot, config: Config) -> None:
     await state.clear()
+    is_admin = message.from_user.id in config.admin_ids
+    menu = main_menu() if is_admin else ReplyKeyboardRemove()
     quiz = await db.get_quiz_by_code(DEEP_LINK.match(command.args).group(1))
     if not quiz:
-        await message.answer("😕 Bu test topilmadi yoki o'chirilgan.", reply_markup=main_menu())
+        await message.answer("😕 Bu test topilmadi yoki o'chirilgan.", reply_markup=menu)
+        return
+    await message.answer("Test topildi 👇", reply_markup=menu)
+    if not is_admin:
+        await message.answer(quiz_card(quiz), reply_markup=start_only_kb(quiz))
         return
     username = (await bot.me()).username
-    await message.answer("Test topildi 👇", reply_markup=main_menu())
     kb = owner_kb(username, quiz) if quiz.owner_id == message.from_user.id else play_kb(username, quiz)
     await message.answer(quiz_card(quiz), reply_markup=kb)
 
 
 @router.message(CommandStart(deep_link=True, magic=F.args.regexp(DEEP_LINK)), GROUPS)
 async def open_quiz_group(message: Message, command: CommandObject, db: Database,
-                          manager: QuizManager) -> None:
+                          manager: QuizManager, config: Config) -> None:
+    if message.from_user.id not in config.admin_ids:
+        await message.answer("Testni guruhda faqat bot admini boshlay oladi.")
+        return
     quiz = await db.get_quiz_by_code(DEEP_LINK.match(command.args).group(1))
     if not quiz:
         await message.answer("😕 Bu test topilmadi yoki o'chirilgan.")

@@ -71,8 +71,9 @@ def prepare_questions(quiz: Quiz, questions: list[Question], rng: random.Random 
 
 
 class QuizManager:
-    def __init__(self, db: Database):
+    def __init__(self, db: Database, admin_ids: frozenset[int] = frozenset()):
         self.db = db
+        self.admin_ids = admin_ids
         self.sessions: dict[int, Session] = {}
         self.polls: dict[str, tuple[Session, Question]] = {}
         self.lobbies: dict[int, Lobby] = {}
@@ -231,10 +232,7 @@ class QuizManager:
                         f"({fmt_duration(p.time)})"
                     )
                 lines.append("\n🏆 G'oliblarni tabriklaymiz!")
-            kb = InlineKeyboardMarkup(inline_keyboard=[[
-                InlineKeyboardButton(text="🔄 Yana o'ynash", url=group_link(username, s.quiz)),
-            ]])
-            await bot.send_message(s.chat_id, "\n".join(lines), reply_markup=kb)
+            await bot.send_message(s.chat_id, "\n".join(lines))
             return
 
         p = s.participants.get(s.launcher_id)
@@ -252,9 +250,11 @@ class QuizManager:
             place = next((i for i, r in enumerate(board) if r["user_id"] == s.launcher_id), None)
             if place is not None:
                 lines.append(f"\n🏆 Ushbu testdagi o'rningiz: <b>{place + 1}</b> / {len(board)}")
-        kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔄 Qayta ishlash", callback_data=PlayCB(quiz_id=s.quiz.id).pack())],
-            [InlineKeyboardButton(text="👥 Guruhda o'tkazish", url=group_link(username, s.quiz))],
-            [InlineKeyboardButton(text="📤 Ulashish", url=share_link(username, s.quiz))],
-        ])
+        rows = [[InlineKeyboardButton(text="🔄 Qayta ishlash", callback_data=PlayCB(quiz_id=s.quiz.id).pack())]]
+        if s.launcher_id in self.admin_ids:  # ulashish tugmalari faqat adminlarga
+            rows += [
+                [InlineKeyboardButton(text="👥 Guruhda o'tkazish", url=group_link(username, s.quiz))],
+                [InlineKeyboardButton(text="📤 Ulashish", url=share_link(username, s.quiz))],
+            ]
+        kb = InlineKeyboardMarkup(inline_keyboard=rows)
         await bot.send_message(s.chat_id, "\n".join(lines), reply_markup=kb)

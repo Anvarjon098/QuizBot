@@ -9,11 +9,14 @@ from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMar
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from ..db import Database
+from ..filters import IsAdmin
 from ..keyboards import BTN_MY, BTN_RATING, BTN_STATS, MyQuizCB, owner_kb
 from ..views import fmt_duration, place_mark, quiz_card
 
 router = Router()
-router.message.filter(F.chat.type == ChatType.PRIVATE, StateFilter(None))
+# Testlarim, statistika va reyting faqat adminlar uchun
+router.message.filter(F.chat.type == ChatType.PRIVATE, StateFilter(None), IsAdmin())
+router.callback_query.filter(IsAdmin())
 
 
 # ---------- mening testlarim ----------

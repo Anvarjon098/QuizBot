@@ -9,6 +9,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
 from ..db import Database
+from ..filters import IsAdmin
 from ..keyboards import (
     BTN_DONE, BTN_IMPORT, BTN_NEW, BTN_SKIP, BTN_UNDO,
     ShuffleCB, TimerCB, cancel_kb, fmt_seconds, main_menu, owner_kb,
@@ -23,7 +24,9 @@ from ..states import CreateQuiz, ImportQuiz
 from ..views import quiz_card
 
 router = Router()
-router.message.filter(F.chat.type == ChatType.PRIVATE)
+# Test yaratish va import faqat adminlar uchun
+router.message.filter(F.chat.type == ChatType.PRIVATE, IsAdmin())
+router.callback_query.filter(IsAdmin())
 
 MAX_ERRORS_SHOWN = 10
 

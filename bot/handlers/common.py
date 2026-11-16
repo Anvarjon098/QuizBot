@@ -1,8 +1,13 @@
+from html import escape
+
 from aiogram import F, Router
 from aiogram.enums import ChatType
 from aiogram.filters import Command, CommandStart, StateFilter
 from aiogram.fsm.context import FSMContext
-from aiogram.types import BufferedInputFile, Message
+from aiogram.types import BufferedInputFile, Message, ReplyKeyboardRemove
+
+from ..config import Config
+from ..filters import IsAdmin
 
 from ..keyboards import BTN_CANCEL, BTN_HELP, main_menu
 from ..parser import SAMPLE_HASH_TXT, SAMPLE_TXT, sample_xlsx
@@ -18,6 +23,13 @@ WELCOME = (
     "• testni do'stlaringiz bilan yoki guruhda o'tkazishingiz,\n"
     "• natija va reytinglarni kuzatishingiz mumkin.\n\n"
     "Quyidagi menyudan tanlang 👇"
+)
+
+# Oddiy foydalanuvchilar faqat havola orqali test ishlaydi
+USER_WELCOME = (
+    "👋 Assalomu alaykum, <b>{name}</b>!\n\n"
+    "Bu bot orqali sizga yuborilgan testlarni ishlashingiz mumkin. "
+    "Testni boshlash uchun sizga berilgan test havolasini oching."
 )
 
 HELP = (
@@ -65,24 +77,29 @@ HELP = (
 
 @router.message(StateFilter("*"), Command("cancel"))
 @router.message(StateFilter("*"), F.text == BTN_CANCEL)
-async def cancel(message: Message, state: FSMContext) -> None:
+async def cancel(message: Message, state: FSMContext, config: Config) -> None:
     await state.clear()
-    await message.answer("Bekor qilindi.", reply_markup=main_menu())
+    is_admin = message.from_user.id in config.admin_ids
+    await message.answer("Bekor qilindi.", reply_markup=main_menu() if is_admin else ReplyKeyboardRemove())
 
 
 @router.message(StateFilter("*"), CommandStart())
-async def start(message: Message, state: FSMContext) -> None:
+async def start(message: Message, state: FSMContext, config: Config) -> None:
     await state.clear()
-    await message.answer(WELCOME.format(name=message.from_user.first_name), reply_markup=main_menu())
+    name = escape(message.from_user.first_name)
+    if message.from_user.id in config.admin_ids:
+        await message.answer(WELCOME.format(name=name), reply_markup=main_menu())
+    else:
+        await message.answer(USER_WELCOME.format(name=name), reply_markup=ReplyKeyboardRemove())
 
 
-@router.message(StateFilter(None), Command("help"))
-@router.message(StateFilter(None), F.text == BTN_HELP)
+@router.message(StateFilter(None), Command("help"), IsAdmin())
+@router.message(StateFilter(None), F.text == BTN_HELP, IsAdmin())
 async def help_(message: Message) -> None:
     await message.answer(HELP, reply_markup=main_menu())
 
 
-@router.message(Command("namuna"))
+@router.message(Command("namuna"), IsAdmin())
 async def samples(message: Message) -> None:
     await message.answer_document(
         BufferedInputFile(SAMPLE_HASH_TXT.encode("utf-8"), "namuna.txt"),
