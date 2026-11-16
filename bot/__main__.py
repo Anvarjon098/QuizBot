@@ -39,6 +39,7 @@ ADMIN_COMMANDS = [
     BotCommand(command="admin", description="Admin panel"),
     BotCommand(command="help", description="Yordam"),
     BotCommand(command="namuna", description="Import uchun namuna fayllar"),
+    BotCommand(command="backup", description="Bazaning zaxira nusxasi"),
     BotCommand(command="cancel", description="Amalni bekor qilish"),
 ]
 

@@ -94,6 +94,26 @@ class Database:
             await self._conn.close()
             self._conn = None
 
+    async def backup_to(self, dest: str) -> None:
+        """Ishlab turgan bazaning to'liq nusxasini dest fayliga yozadi."""
+        await self.conn.commit()
+        target = await aiosqlite.connect(dest)
+        try:
+            await self.conn.backup(target)
+        finally:
+            await target.close()
+
+    async def restore_from(self, src: str) -> None:
+        """Bazani src faylidagi nusxa bilan almashtiradi (src oldindan tekshirilgan bo'lishi kerak)."""
+        import os
+        import shutil
+        await self.close()
+        for suffix in ("-wal", "-shm"):
+            if os.path.exists(self.path + suffix):
+                os.remove(self.path + suffix)
+        shutil.copyfile(src, self.path)
+        await self.connect()
+
     # ---------- foydalanuvchilar ----------
 
     async def upsert_user(self, user: User, private: bool) -> None:
@@ -380,3 +400,20 @@ class Database:
             cur = await self.conn.execute(sql)
             result[key] = (await cur.fetchone())[0]
         return result
+
+
+# ---------- zaxira nusxa ----------
+
+def is_valid_backup(path: str) -> bool:
+    """Fayl QuizBot bazasi ekanini tekshiradi."""
+    import sqlite3
+    try:
+        con = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+        try:
+            tables = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            return {"users", "quizzes", "questions"} <= tables and \
+                con.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+        finally:
+            con.close()
+    except sqlite3.Error:
+        return False

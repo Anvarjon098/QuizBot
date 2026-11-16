@@ -231,3 +231,49 @@ async def _broadcast(bot: Bot, db: Database, admin_id: int, from_chat: int, mess
         f"⚠️ Xato: {failed}",
         reply_markup=main_menu(),
     )
+
+
+# ---------- zaxira nusxa: /backup va /restore ----------
+
+@router.message(StateFilter("*"), Command("backup"))
+async def backup(message: Message, db: Database) -> None:
+    import os
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        path = os.path.join(tmp, "quizbot.db")
+        await db.backup_to(path)
+        with open(path, "rb") as f:
+            data = f.read()
+    await message.answer_document(
+        BufferedInputFile(data, filename="quizbot.db"),
+        caption="💾 Bazaning zaxira nusxasi.\nBoshqa serverga ko'chirish: shu faylni yangi botga "
+                "<code>/restore</code> izohi bilan yuboring.",
+    )
+
+
+@router.message(StateFilter("*"), F.document, F.caption.regexp(r"^/restore(@\w+)?\s*$"))
+async def restore(message: Message, db: Database, manager: QuizManager, bot: Bot) -> None:
+    import os
+    import tempfile
+    from ..db import is_valid_backup
+    if manager.sessions:
+        await message.answer("⚠️ Hozir testlar ketmoqda. Ular tugagach qayta urinib ko'ring.")
+        return
+    if message.document.file_size and message.document.file_size > 50 * 1024 * 1024:
+        await message.answer("⚠️ Fayl juda katta.")
+        return
+    with tempfile.TemporaryDirectory() as tmp:
+        path = os.path.join(tmp, "upload.db")
+        await bot.download(message.document, destination=path)
+        if not is_valid_backup(path):
+            await message.answer("⚠️ Bu fayl QuizBot bazasi emas yoki shikastlangan.")
+            return
+        await db.restore_from(path)
+    manager.lobbies.clear()
+    counts = await db.admin_counts()
+    await message.answer(
+        "✅ Baza tiklandi!\n"
+        f"👥 Foydalanuvchilar: <b>{counts['users']}</b>\n"
+        f"📚 Testlar: <b>{counts['quizzes']}</b> ({counts['questions']} savol)\n"
+        f"🎮 Urinishlar: <b>{counts['attempts']}</b>"
+    )

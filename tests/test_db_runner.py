@@ -159,3 +159,27 @@ async def test_old_menu_cleanup_migration(tmp_path):
         assert await d.users_with_old_menu(frozenset({1})) == []
     finally:
         await d.close()
+
+
+async def test_backup_and_restore(tmp_path):
+    from bot.db import is_valid_backup
+    from bot.models import Question
+    src = Database(str(tmp_path / "a.db"))
+    await src.connect()
+    from aiogram.types import User
+    await src.upsert_user(User(id=7, is_bot=False, first_name="A"), private=True)
+    await src.create_quiz(7, "Zaxira", "", 30, False, False, [Question("2+2?", ["3", "4"], 1)])
+    await src.backup_to(str(tmp_path / "backup.db"))
+    await src.close()
+    assert is_valid_backup(str(tmp_path / "backup.db"))
+
+    (tmp_path / "junk.db").write_bytes(b"not a database")
+    assert not is_valid_backup(str(tmp_path / "junk.db"))
+
+    dst = Database(str(tmp_path / "b.db"))
+    await dst.connect()
+    assert await dst.count_quizzes() == 0
+    await dst.restore_from(str(tmp_path / "backup.db"))
+    assert await dst.count_quizzes() == 1
+    assert (await dst.all_quizzes(0, 10))[0].title == "Zaxira"
+    await dst.close()

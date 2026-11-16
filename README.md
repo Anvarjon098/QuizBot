@@ -153,3 +153,22 @@ python -m pytest -q
 
 Bot yiqilsa yoki internet uzilsa — o'zi qayta yonadi; telefon qayta yoqilganda Termux:Boot uni avtomatik ishga tushiradi.
 ⚠️ Bitta token bilan bot faqat **bitta** joyda ishlashi mumkin.
+
+## 🖥 VPS'ga o'rnatish (Ubuntu/Debian)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Anvarjon098/QuizBot/claude/claude-qhb9qq/deploy/install_vps.sh -o install_vps.sh && sudo bash install_vps.sh
+```
+
+Skript botni `/opt/quizbot` papkasiga o'rnatadi va `quizbot` systemd xizmatini yaratadi: bot yiqilsa yoki server qayta yonsa, o'zi ishga tushadi.
+
+| Buyruq | Vazifasi |
+|---|---|
+| `journalctl -u quizbot -f` | jurnal |
+| `systemctl restart quizbot` | qayta ishga tushirish |
+| `systemctl stop quizbot` | to'xtatish |
+| `bash /opt/quizbot/deploy/update_vps.sh` | yangi kodni yuklab, qayta ishga tushirish |
+
+### Bazani ko'chirish
+- Eski botga `/backup` yuboring — bot `quizbot.db` faylini yuboradi.
+- Yangi serverdagi botga shu faylni **`/restore`** izohi (caption) bilan yuboring.
