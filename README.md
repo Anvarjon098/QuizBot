@@ -66,6 +66,7 @@ Buxoro
 - `#` qo'yilgan variant to'g'ri javob. `#` qatorning boshida yoki oxirida (bo'sh joydan keyin) turishi mumkin.
 - `+` savolni tugatadi. Uni qo'ymasangiz ham bo'ladi: variantlardan keyin kelgan `?` li qator yangi savolni boshlaydi.
 - Savol matnida `?` bo'lmasa, blokning birinchi qatori savol deb olinadi.
+- Javoblarni ajratish uchun qo'yilgan `====` (3 va undan ko'p `=`) o'qilmaydi. U alohida qatorda ham, javoblar orasida bitta qatorda ham turishi mumkin: `Toshkent ==== #Samarqand ==== Buxoro`.
 
 Faylda `#` bilan boshlanadigan yoki faqat `+` dan iborat qator bo'lsa, bot shu formatni ishlatadi. Aks holda quyidagi boshqa formatlar bilan o'qiladi.
 

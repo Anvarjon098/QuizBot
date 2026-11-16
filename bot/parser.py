@@ -18,7 +18,7 @@ EXPL_RE = re.compile(r"^(?:izoh|explanation|пояснение)\s*[:\-–]\s*(.+
 LETTER_OPT_RE = re.compile(r"^(\*)?\s*([a-jа-к])\s*[).]\s*(.+?)\s*(\*)?$", re.I)
 LETTER_PREFIX_RE = re.compile(r"^[a-jа-к]\s*[).]\s*", re.I)
 NUMBER_RE = re.compile(r"^\s*(?:savol\s*)?\d+\s*[.)\-:]\s*", re.I)
-HEADER_RE = re.compile(r"savol|question|вопрос", re.I)
+HEADER_RE = re.compile(r"^(?:№\s*)?(?:savol(?:lar)?|questions?|вопрос[ы]?)\s*:?$", re.I)
 EXPL_HEADER_RE = re.compile(r"izoh|explan|поясн", re.I)
 
 MAX_FILE_SIZE = 5 * 1024 * 1024
@@ -54,15 +54,35 @@ SEPARATOR_RE = re.compile(r"^\++$")
 TRAILING_HASH_RE = re.compile(r"\s+#+$")
 
 
+ANSWER_DIVIDER_RE = re.compile(r"\s*={3,}\s*")
+
+Lines = list[tuple[int, str]]  # (qator raqami, matn)
+
+
+def _split_lines(text: str) -> Lines:
+    """
+    Qatorlarni raqami bilan qaytaradi. «====» (3 va undan ko'p «=») javoblarni ajratish
+    uchun qo'yiladi: alohida qatordagi «====» tashlab yuboriladi, qator ichidagisi esa
+    qatorni bir nechta qatorga bo'ladi («Toshkent ==== #Samarqand» → ikki variant).
+    """
+    lines: Lines = []
+    for line_no, raw in enumerate(text.splitlines(), 1):
+        if not ANSWER_DIVIDER_RE.search(raw):
+            lines.append((line_no, raw.strip()))
+            continue
+        lines.extend((line_no, part) for part in ANSWER_DIVIDER_RE.split(raw.strip()) if part.strip())
+    return lines
+
+
 def parse_text(text: str) -> ParseResult:
     """Matnni o'qiydi. Format avtomatik aniqlanadi: «#»/«+» formati yoki klassik format."""
-    lines = [l.strip() for l in text.splitlines()]
-    if any(SEPARATOR_RE.match(l) or l.startswith("#") for l in lines):
-        return _parse_hash(text)
-    return _parse_classic(text)
+    lines = _split_lines(text)
+    if any(SEPARATOR_RE.match(l) or l.startswith("#") for _, l in lines):
+        return _parse_hash(lines)
+    return _parse_classic(lines)
 
 
-def _parse_hash(text: str) -> ParseResult:
+def _parse_hash(lines: Lines) -> ParseResult:
     """
     «#» formati:
 
@@ -77,6 +97,7 @@ def _parse_hash(text: str) -> ParseResult:
         +
 
     «+» qo'yilmasa ham, variantlardan keyin kelgan «?» li qator yangi savolni boshlaydi.
+    Javoblar orasidagi «====» qatorlari o'qilmaydi.
     Savol matnida «?» bo'lmasa, blokning birinchi qatori savol deb olinadi.
     """
     def question_end(block: list[tuple[int, str]]) -> int | None:
@@ -84,8 +105,7 @@ def _parse_hash(text: str) -> ParseResult:
 
     blocks: list[list[tuple[int, str]]] = []
     cur: list[tuple[int, str]] = []
-    for line_no, raw in enumerate(text.splitlines(), 1):
-        line = raw.strip()
+    for line_no, line in lines:
         if not line:
             continue
         if SEPARATOR_RE.match(line):
@@ -126,7 +146,7 @@ def _parse_hash(text: str) -> ParseResult:
     return _drafts_to_result(drafts)
 
 
-def _parse_classic(text: str) -> ParseResult:
+def _parse_classic(lines: Lines) -> ParseResult:
     """
     Klassik formatlar (bir faylda aralash bo'lishi ham mumkin):
 
@@ -146,8 +166,7 @@ def _parse_classic(text: str) -> ParseResult:
             drafts.append(cur)
         cur = None
 
-    for line_no, raw in enumerate(text.splitlines(), 1):
-        line = raw.strip()
+    for line_no, line in lines:
         if not line:
             if cur and cur.options:
                 flush()
@@ -216,7 +235,8 @@ def _cell(value) -> str:
         return ""
     if isinstance(value, float) and value.is_integer():
         value = int(value)
-    return str(value).strip()
+    text = str(value).strip()
+    return "" if re.fullmatch(r"=*", text) else text
 
 
 def parse_rows(rows: list[list]) -> ParseResult:
@@ -230,7 +250,7 @@ def parse_rows(rows: list[list]) -> ParseResult:
     expl_col: int | None = None
     start = 0
     first = next((i for i, r in enumerate(table) if any(r)), None)
-    if first is not None and table[first] and HEADER_RE.search(table[first][0]):
+    if first is not None and table[first] and HEADER_RE.match(table[first][0]):
         start = first + 1
         for i, h in enumerate(table[first]):
             if EXPL_HEADER_RE.search(h):

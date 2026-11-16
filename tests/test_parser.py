@@ -115,3 +115,28 @@ def test_hash_docx():
     buf = io.BytesIO(); d.save(buf)
     r = parse_file("t.docx", buf.getvalue())
     assert len(r.questions) == 3 and r.errors == []
+
+
+def test_equals_dividers_are_ignored():
+    text = (
+        "Poytaxt qaysi?\n====\n#Toshkent\n====\nSamarqand\n=====\nBuxoro\n+\n"
+        "2 + 2 = ?\nToshkent ==== #4 ==== 5\n+\n"
+    )
+    r = parse_text(text)
+    assert r.errors == []
+    q1, q2 = r.questions
+    assert q1.options == ["Toshkent", "Samarqand", "Buxoro"] and q1.correct == 0
+    assert q2.text == "2 + 2 = ?"
+    assert q2.options == ["Toshkent", "4", "5"] and q2.correct == 1
+
+
+def test_equals_dividers_classic_and_rows():
+    r = parse_text("1. Savol?\n+ha\n====\n-yo'q\n====\n\n2. Ikkinchi?\nA) x\n====\n*B) y")
+    assert r.errors == [] and [len(q.options) for q in r.questions] == [2, 2]
+    r = parse_rows([["Savol?", "ha", "====", "yo'q"]])
+    assert r.questions[0].options == ["ha", "yo'q"]
+
+
+def test_header_detection_is_strict():
+    assert len(parse_rows([["Savol nima?", "ha", "yo'q"]]).questions) == 1
+    assert len(parse_rows([["Savollar", "To'g'ri", "Xato"], ["A?", "ha", "yo'q"]]).questions) == 1
