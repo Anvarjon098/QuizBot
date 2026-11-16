@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import random
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from html import escape
 
@@ -77,6 +78,9 @@ class QuizManager:
         self.sessions: dict[int, Session] = {}
         self.polls: dict[str, tuple[Session, Question]] = {}
         self.lobbies: dict[int, Lobby] = {}
+        # /update navbatda bo'lsa: yangi testlar boshlanmaydi, oxirgisi tugagach on_idle chaqiriladi
+        self.updating = False
+        self.on_idle: Callable[[], Awaitable[None]] | None = None
 
     def is_running(self, chat_id: int) -> bool:
         return chat_id in self.sessions
@@ -102,10 +106,10 @@ class QuizManager:
         session.task.cancel()
         return True
 
-    async def shutdown(self) -> None:
+    async def shutdown(self, reason: str = "manual") -> None:
         tasks = [s.task for s in self.sessions.values() if s.task]
         for s in self.sessions.values():
-            s.stop_reason = "manual"
+            s.stop_reason = reason
         for t in tasks:
             t.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
@@ -202,6 +206,12 @@ class QuizManager:
                 await self._finish(bot, s)
             except Exception:
                 log.exception("Natijalarni yuborishda xato (chat %s)", s.chat_id)
+            if not self.sessions and self.on_idle is not None:
+                callback, self.on_idle = self.on_idle, None
+                try:
+                    await callback()
+                except Exception:
+                    log.exception("on_idle xatosi")
 
     # ---------- natijalar ----------
 
@@ -217,6 +227,8 @@ class QuizManager:
 
         header = {
             "manual": "⏹ Test to'xtatildi.",
+            "update": "🔧 Bot yangilanishi sababli test to'xtatildi. Natijangiz saqlandi — "
+                      "bir daqiqadan keyin qayta ishlashingiz mumkin.",
             "inactive": f"⏸ Siz ketma-ket {INACTIVE_LIMIT} ta savolga javob bermadingiz, test to'xtatildi.",
             "error": "⚠️ Texnik xato tufayli test to'xtatildi.",
         }.get(s.stop_reason or "", "🏁 Test yakunlandi!")

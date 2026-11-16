@@ -183,3 +183,36 @@ async def test_backup_and_restore(tmp_path):
     assert await dst.count_quizzes() == 1
     assert (await dst.all_quizzes(0, 10))[0].title == "Zaxira"
     await dst.close()
+
+
+async def test_on_idle_called_after_last_quiz(tmp_path):
+    """Oxirgi test tugagach navbatdagi yangilanish chaqiriladi; to'xtatilgan test natijasi saqlanadi."""
+    import asyncio
+    from unittest.mock import AsyncMock, MagicMock
+    from bot.models import Question
+    from bot.runner import QuizManager
+    db = Database(str(tmp_path / "i.db"))
+    await db.connect()
+    try:
+        quiz = await db.create_quiz(1, "T", "", 30, False, False, [Question("Q?", ["a", "b"], 0)])
+        qs = await db.get_questions(quiz.id)
+        bot = MagicMock()
+        bot.send_message = AsyncMock()
+        bot.send_poll = AsyncMock(return_value=MagicMock(message_id=1, poll=MagicMock(id="p")))
+        bot.stop_poll = AsyncMock()
+        bot.me = AsyncMock(return_value=MagicMock(username="b"))
+        mgr = QuizManager(db)
+        called = []
+
+        async def idle():
+            called.append(True)
+
+        mgr.on_idle = idle
+        mgr.start(bot, 10, quiz, qs, 1, is_group=False)
+        await asyncio.sleep(0.05)
+        await mgr.shutdown(reason="update")
+        assert called == [True]
+        last = bot.send_message.call_args_list[-1]
+        assert "yangilanishi sababli" in last.args[1]
+    finally:
+        await db.close()

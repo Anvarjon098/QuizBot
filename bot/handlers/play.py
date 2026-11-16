@@ -21,6 +21,7 @@ GROUPS = F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP})
 PRIVATE = F.chat.type == ChatType.PRIVATE
 DEEP_LINK = re.compile(r"^quiz_([A-Za-z0-9_-]+)$")
 READY_TO_START = 2
+UPDATING_TEXT = "🔧 Bot hozir yangilanmoqda. Bir daqiqadan keyin qayta urinib ko'ring."
 
 
 async def _is_chat_admin(bot: Bot, chat_id: int, user_id: int) -> bool:
@@ -70,6 +71,9 @@ async def open_quiz_group(message: Message, command: CommandObject, db: Database
         return
     if manager.is_running(message.chat.id):
         await message.answer("Bu guruhda test allaqachon ketmoqda. To'xtatish: /stop")
+        return
+    if manager.updating:
+        await message.answer(UPDATING_TEXT)
         return
     lobby = Lobby(quiz.id, message.from_user.id, message_id=0)
     sent = await message.answer(_lobby_text(quiz, lobby), reply_markup=lobby_kb())
@@ -121,6 +125,9 @@ async def lobby_action(call: CallbackQuery, callback_data: LobbyCB, db: Database
 
     if manager.is_running(chat_id):
         return
+    if manager.updating:
+        await call.message.answer(UPDATING_TEXT)
+        return
     questions = await db.get_questions(quiz.id)
     await call.message.edit_text(_lobby_text(quiz, lobby) + "\n\n🚀 Boshladik!")
     manager.start(bot, chat_id, quiz, questions, lobby.launcher_id, is_group=True)
@@ -137,6 +144,9 @@ async def play(call: CallbackQuery, callback_data: PlayCB, db: Database, manager
     chat_id = call.message.chat.id
     if manager.is_running(chat_id):
         await call.answer("Avval joriy testni tugating yoki /stop buyrug'ini yuboring.", show_alert=True)
+        return
+    if manager.updating:
+        await call.answer(UPDATING_TEXT, show_alert=True)
         return
     quiz = await db.get_quiz(callback_data.quiz_id)
     if not quiz:

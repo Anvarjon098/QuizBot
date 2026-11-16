@@ -172,3 +172,11 @@ Skript botni `/opt/quizbot` papkasiga o'rnatadi va `quizbot` systemd xizmatini y
 ### Bazani ko'chirish
 - Eski botga `/backup` yuboring — bot `quizbot.db` faylini yuboradi.
 - Yangi serverdagi botga shu faylni **`/restore`** izohi (caption) bilan yuboring.
+
+## 🔄 Botni Telegram orqali yangilash (faqat admin)
+
+| Buyruq | Vazifasi |
+|---|---|
+| `/update` | GitHub'dagi yangi kodni o'rnatadi. Testlar ketayotgan bo'lsa — ular tugashini kutadi (shu orada yangi testlar boshlanmaydi), keyin o'zi yangilanib xabar beradi |
+| `/update majburiy` | ketayotgan testlarni darhol yakunlaydi (natijalar saqlanadi, ishtirokchilarga xabar boradi) va yangilanadi |
+| `/update bekor` | navbatdagi yangilanishni bekor qiladi |

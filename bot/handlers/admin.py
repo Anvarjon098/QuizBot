@@ -8,7 +8,7 @@ from html import escape
 from aiogram import Bot, F, Router
 from aiogram.enums import ChatType
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError, TelegramRetryAfter
-from aiogram.filters import Command, StateFilter
+from aiogram.filters import Command, CommandObject, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.types import (
     BufferedInputFile, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message,
@@ -280,30 +280,74 @@ async def restore(message: Message, db: Database, manager: QuizManager, bot: Bot
 
 
 # ---------- /update: GitHub'dan yangi kodni yuklab, qayta ishga tushish ----------
+#   /update           — testlar ketayotgan bo'lsa, ular tugashini kutib yangilanadi
+#   /update majburiy  — testlarni darhol yakunlab (natijalar saqlanadi), yangilanadi
+#   /update bekor     — navbatdagi yangilanishni bekor qiladi
 
-@router.message(StateFilter("*"), Command("update"))
-async def update_bot(message: Message, manager: QuizManager, dispatcher=None) -> None:
+FORCE_WORDS = {"majburiy", "force", "darhol", "hozir"}
+CANCEL_WORDS = {"bekor", "cancel"}
+
+
+async def _perform_update(bot: Bot, chat_id: int, dispatcher, manager: QuizManager) -> None:
+    """Eng so'nggi kodni o'rnatadi va botni qayta ishga tushiradi."""
     from .. import updater
-    if manager.sessions:
-        await message.answer("⚠️ Hozir testlar ketmoqda. Ular tugagach qayta urinib ko'ring.")
-        return
-    status = await message.answer("🔎 Yangilanish tekshirilmoqda...")
     try:
         commit = await updater.latest_commit()
         if commit.sha == updater.current_version():
-            await status.edit_text(f"✅ Bot eng so'nggi versiyada.\n<code>{commit.sha[:7]}</code> {escape(commit.message)}")
+            manager.updating = False
+            await bot.send_message(chat_id, f"✅ Bot eng so'nggi versiyada.\n"
+                                            f"<code>{commit.sha[:7]}</code> {escape(commit.message)}")
             return
-        await status.edit_text(f"⬇️ Yuklanmoqda: <code>{commit.sha[:7]}</code> {escape(commit.message)}")
+        await bot.send_message(chat_id, f"⬇️ Yuklanmoqda: <code>{commit.sha[:7]}</code> {escape(commit.message)}")
         await updater.apply_update(commit)
-    except updater.UpdateError as e:
-        await status.edit_text(f"⚠️ Yangilab bo'lmadi: {escape(str(e))}")
-        return
     except Exception as e:
-        log.exception("Yangilashda xato")
-        await status.edit_text(f"⚠️ Yangilashda xato: {escape(type(e).__name__)}")
+        manager.updating = False
+        if not isinstance(e, updater.UpdateError):
+            log.exception("Yangilashda xato")
+        await bot.send_message(chat_id, f"⚠️ Yangilab bo'lmadi: {escape(str(e) or type(e).__name__)}")
         return
-    updater.save_notice(message.chat.id, commit)
-    await status.edit_text("♻️ Kod yangilandi, bot qayta ishga tushmoqda (5–15 soniya)...")
+    updater.save_notice(chat_id, commit)
+    await bot.send_message(chat_id, "♻️ Kod yangilandi, bot qayta ishga tushmoqda (5–15 soniya)...")
     if dispatcher is not None:
         # handler tugashini kutmasdan to'xtatish (aks holda o'zini o'zi kutib qoladi)
         asyncio.get_running_loop().call_later(1, lambda: asyncio.create_task(dispatcher.stop_polling()))
+
+
+@router.message(StateFilter("*"), Command("update"))
+async def update_bot(message: Message, command: CommandObject, manager: QuizManager, bot: Bot,
+                     dispatcher=None) -> None:
+    arg = (command.args or "").strip().lower()
+    chat_id = message.chat.id
+
+    if arg in CANCEL_WORDS:
+        if manager.on_idle is None:
+            await message.answer("Navbatda yangilanish yo'q.")
+            return
+        manager.on_idle = None
+        manager.updating = False
+        await message.answer("❎ Yangilanish bekor qilindi, testlar odatdagidek boshlanaveradi.")
+        return
+
+    force = arg in FORCE_WORDS
+    if manager.sessions and not force:
+        if manager.on_idle is not None:
+            await message.answer(f"⏳ Yangilanish allaqachon navbatda ({len(manager.sessions)} ta test ketmoqda).\n"
+                                 "Darhol: <code>/update majburiy</code> · Bekor: <code>/update bekor</code>")
+            return
+        manager.updating = True
+        manager.on_idle = lambda: _perform_update(bot, chat_id, dispatcher, manager)
+        await message.answer(
+            f"⏳ Hozir <b>{len(manager.sessions)}</b> ta test ketmoqda. Ular tugashi bilan bot o'zi yangilanadi "
+            "va sizga xabar beradi. Shu orada yangi testlar boshlanmaydi.\n\n"
+            "Darhol yangilash: <code>/update majburiy</code>\nBekor qilish: <code>/update bekor</code>"
+        )
+        return
+
+    manager.updating = True
+    manager.on_idle = None
+    if manager.sessions:
+        await message.answer(f"⏹ {len(manager.sessions)} ta test yakunlanmoqda, natijalar saqlanadi...")
+        await manager.shutdown(reason="update")
+    else:
+        await message.answer("🔎 Yangilanish tekshirilmoqda...")
+    await _perform_update(bot, chat_id, dispatcher, manager)

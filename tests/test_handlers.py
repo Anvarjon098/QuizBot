@@ -57,7 +57,8 @@ async def env(tmp_path):
     await db.connect()
     session = FakeSession()
     bot = Bot("42:TEST", session=session)
-    dp = Dispatcher(storage=MemoryStorage(), db=db, manager=QuizManager(db),
+    mgr = QuizManager(db)
+    dp = Dispatcher(storage=MemoryStorage(), db=db, manager=mgr,
                     config=Config("42:TEST", frozenset({1}), ""))
     dp.update.outer_middleware(UserMiddleware(db))
     routers = (play.router, common.router, admin.router, create.router, stats.router, fallback.router)
@@ -82,6 +83,7 @@ async def env(tmp_path):
         await dp.feed_update(bot, Update(update_id=next(upd), callback_query=cq))
         return session
 
+    send.manager = mgr
     try:
         yield db, send, press
     finally:
@@ -224,3 +226,76 @@ async def test_update_command(env, monkeypatch):
 
     s = await send("/update", user=GUEST)
     assert applied == ["abc1234567"]
+
+
+async def test_update_waits_for_running_quizzes(env, monkeypatch):
+    import asyncio
+    from bot import updater
+    from bot.runner import Session
+    _, send, _ = env
+    mgr = send.manager
+
+    async def latest():
+        return updater.Commit("new0000000", "Yangi")
+
+    applied = []
+
+    async def apply(commit):
+        applied.append(commit.sha)
+
+    monkeypatch.setattr(updater, "latest_commit", latest)
+    monkeypatch.setattr(updater, "apply_update", apply)
+    monkeypatch.setattr(updater, "save_notice", lambda *a: None)
+    monkeypatch.setattr(updater, "current_version", lambda: "old")
+
+    # bitta test ketmoqda -> yangilanish navbatga qo'yiladi
+    mgr.sessions[555] = Session(555, None, [], 7, False)
+    s = await send("/update")
+    assert any("tugashi bilan" in t for t in s.texts())
+    assert applied == [] and mgr.updating and mgr.on_idle is not None
+
+    # navbat paytida yangi test boshlanmaydi
+    s = await send("/update")
+    assert any("allaqachon navbatda" in t for t in s.texts())
+
+    # bekor qilish
+    s = await send("/update bekor")
+    assert mgr.on_idle is None and not mgr.updating
+
+    # yana navbatga qo'yib, test tugaganini taqlid qilamiz
+    await send("/update")
+    mgr.sessions.clear()
+    callback, mgr.on_idle = mgr.on_idle, None
+    await callback()
+    assert applied == ["new0000000"]
+
+
+async def test_update_force_stops_quizzes(env, monkeypatch):
+    from bot import updater
+    _, send, _ = env
+    mgr = send.manager
+    stopped = []
+
+    async def fake_shutdown(reason="manual"):
+        stopped.append(reason)
+        mgr.sessions.clear()
+
+    async def latest():
+        return updater.Commit("new0000000", "Yangi")
+
+    applied = []
+
+    async def apply(commit):
+        applied.append(commit.sha)
+
+    monkeypatch.setattr(mgr, "shutdown", fake_shutdown)
+    monkeypatch.setattr(updater, "latest_commit", latest)
+    monkeypatch.setattr(updater, "apply_update", apply)
+    monkeypatch.setattr(updater, "save_notice", lambda *a: None)
+    monkeypatch.setattr(updater, "current_version", lambda: "old")
+
+    mgr.sessions[555] = object()
+    s = await send("/update majburiy")
+    assert stopped == ["update"]
+    assert applied == ["new0000000"]
+    assert any("qayta ishga tushmoqda" in t for t in s.texts())
