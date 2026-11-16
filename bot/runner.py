@@ -235,7 +235,10 @@ class QuizManager:
                         f"({fmt_duration(p.time)})"
                     )
                 lines.append("\n🏆 G'oliblarni tabriklaymiz!")
-            await bot.send_message(s.chat_id, "\n".join(lines))
+            kb = InlineKeyboardMarkup(inline_keyboard=[[
+                InlineKeyboardButton(text="🔄 Boshqa guruhda o'tkazish", url=group_link(username, s.quiz)),
+            ]])
+            await bot.send_message(s.chat_id, "\n".join(lines), reply_markup=kb)
             return
 
         p = s.participants.get(s.launcher_id)
@@ -253,11 +256,11 @@ class QuizManager:
             place = next((i for i, r in enumerate(board) if r["user_id"] == s.launcher_id), None)
             if place is not None:
                 lines.append(f"\n🏆 Ushbu testdagi o'rningiz: <b>{place + 1}</b> / {len(board)}")
-        rows = [[InlineKeyboardButton(text="🔄 Qayta ishlash", callback_data=PlayCB(quiz_id=s.quiz.id).pack())]]
-        if s.launcher_id in self.admin_ids:  # ulashish tugmalari faqat adminlarga
-            rows += [
-                [InlineKeyboardButton(text="👥 Guruhda o'tkazish", url=group_link(username, s.quiz))],
-                [InlineKeyboardButton(text="📤 Ulashish", url=share_link(username, s.quiz))],
-            ]
+        rows = [
+            [InlineKeyboardButton(text="🔄 Qayta ishlash", callback_data=PlayCB(quiz_id=s.quiz.id).pack())],
+            [InlineKeyboardButton(text="👥 Guruhda o'tkazish", url=group_link(username, s.quiz))],
+        ]
+        if s.launcher_id in self.admin_ids:  # «Ulashish» faqat adminlarga
+            rows.append([InlineKeyboardButton(text="📤 Ulashish", url=share_link(username, s.quiz))])
         kb = InlineKeyboardMarkup(inline_keyboard=rows)
         await bot.send_message(s.chat_id, "\n".join(lines), reply_markup=kb)

@@ -67,9 +67,9 @@ async def env(tmp_path):
     upd = itertools.count(1)
     msg_ids = itertools.count(1)
 
-    async def send(text, user=ME):
+    async def send(text, user=ME, chat=None):
         session.calls.clear()
-        chat = Chat(id=user.id, type="private")
+        chat = chat or Chat(id=user.id, type="private")
         m = Message(message_id=next(msg_ids), date=dt.datetime.now(), chat=chat, from_user=user, text=text)
         await dp.feed_update(bot, Update(update_id=next(upd), message=m))
         return session
@@ -175,11 +175,22 @@ async def test_guest_can_only_take_quizzes(env):
     assert "mavjud emas" in s.calls[0].text
     assert await db.user_quizzes(2) == []
 
-    # havola orqali faqat «Testni boshlash» tugmasi
+    # havola orqali: testni boshlash va guruhda o'tkazish (boshqaruv tugmalarisiz)
     s = await send(f"/start quiz_{quiz.code}", GUEST)
     card = s.calls[-1]
-    assert "Tarix" in card.text and _buttons(card) == ["▶️ Testni boshlash"]
+    assert "Tarix" in card.text and _buttons(card) == ["▶️ Testni boshlash", "👥 Guruhda o'tkazish"]
+    group_url = card.reply_markup.inline_keyboard[1][0].url
+    assert group_url == f"https://t.me/test_quiz_bot?startgroup=quiz_{quiz.code}"
 
     # admin esa to'liq tugmalarni ko'radi
     s = await send(f"/start quiz_{quiz.code}")
     assert "👥 Guruhda o'tkazish" in _buttons(s.calls[-1]) and "📊 Statistika" in _buttons(s.calls[-1])
+
+
+async def test_guest_can_start_quiz_in_group(env):
+    db, send, press = env
+    from bot.models import Question
+    quiz = await db.create_quiz(1, "Guruh testi", None, 30, False, False, [Question("Savol?", ["a", "b"], 0)])
+    s = await send(f"/start@test_quiz_bot quiz_{quiz.code}", GUEST, chat=Chat(id=-100, type="supergroup"))
+    lobby = next(c for c in s.calls if getattr(c, "text", None))
+    assert "Guruh testi" in lobby.text and _buttons(lobby)[0] == "✋ Men tayyorman!"

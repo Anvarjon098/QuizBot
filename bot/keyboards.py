@@ -129,10 +129,11 @@ def shuffle_kb() -> InlineKeyboardMarkup:
     return b.as_markup()
 
 
-def start_only_kb(quiz: Quiz) -> InlineKeyboardMarkup:
-    """Oddiy foydalanuvchilar uchun: faqat testni boshlash tugmasi."""
+def guest_kb(bot_username: str, quiz: Quiz) -> InlineKeyboardMarkup:
+    """Oddiy foydalanuvchilar uchun: testni boshlash va guruhda o'tkazish."""
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="▶️ Testni boshlash", callback_data=PlayCB(quiz_id=quiz.id).pack())],
+        [InlineKeyboardButton(text="👥 Guruhda o'tkazish", url=group_link(bot_username, quiz))],
     ])
 
 

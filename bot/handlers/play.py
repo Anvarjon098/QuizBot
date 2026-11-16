@@ -11,7 +11,7 @@ from aiogram.types import CallbackQuery, Message, PollAnswer, ReplyKeyboardRemov
 
 from ..config import Config
 from ..db import Database
-from ..keyboards import LobbyCB, PlayCB, lobby_kb, main_menu, owner_kb, play_kb, start_only_kb
+from ..keyboards import LobbyCB, PlayCB, lobby_kb, main_menu, owner_kb, play_kb, guest_kb
 from ..runner import Lobby, QuizManager
 from ..views import quiz_card
 
@@ -53,20 +53,17 @@ async def open_quiz_private(message: Message, command: CommandObject, state: FSM
         await message.answer("😕 Bu test topilmadi yoki o'chirilgan.", reply_markup=menu)
         return
     await message.answer("Test topildi 👇", reply_markup=menu)
-    if not is_admin:
-        await message.answer(quiz_card(quiz), reply_markup=start_only_kb(quiz))
-        return
     username = (await bot.me()).username
+    if not is_admin:
+        await message.answer(quiz_card(quiz), reply_markup=guest_kb(username, quiz))
+        return
     kb = owner_kb(username, quiz) if quiz.owner_id == message.from_user.id else play_kb(username, quiz)
     await message.answer(quiz_card(quiz), reply_markup=kb)
 
 
 @router.message(CommandStart(deep_link=True, magic=F.args.regexp(DEEP_LINK)), GROUPS)
 async def open_quiz_group(message: Message, command: CommandObject, db: Database,
-                          manager: QuizManager, config: Config) -> None:
-    if message.from_user.id not in config.admin_ids:
-        await message.answer("Testni guruhda faqat bot admini boshlay oladi.")
-        return
+                          manager: QuizManager) -> None:
     quiz = await db.get_quiz_by_code(DEEP_LINK.match(command.args).group(1))
     if not quiz:
         await message.answer("😕 Bu test topilmadi yoki o'chirilgan.")
