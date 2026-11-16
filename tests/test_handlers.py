@@ -36,7 +36,7 @@ class FakeSession(BaseSession):
         if ret is Message:
             chat_id = getattr(method, "chat_id", None) or CHAT.id
             return Message(message_id=next(self.ids), date=dt.datetime.now(),
-                           chat=Chat(id=chat_id, type="private"), text=getattr(method, "text", None))
+                           chat=Chat(id=chat_id, type="private"), text=getattr(method, "text", None)).as_(bot)
         if ret is bool or "bool" in str(ret):
             return True
         raise NotImplementedError(type(method).__name__)
@@ -194,3 +194,33 @@ async def test_guest_can_start_quiz_in_group(env):
     s = await send(f"/start@test_quiz_bot quiz_{quiz.code}", GUEST, chat=Chat(id=-100, type="supergroup"))
     lobby = next(c for c in s.calls if getattr(c, "text", None))
     assert "Guruh testi" in lobby.text and _buttons(lobby)[0] == "✋ Men tayyorman!"
+
+
+async def test_update_command(env, monkeypatch):
+    from bot import updater
+    _, send, _ = env
+
+    async def latest():
+        return updater.Commit("abc1234567", "Yangi funksiya")
+
+    applied = []
+
+    async def apply(commit):
+        applied.append(commit.sha)
+
+    monkeypatch.setattr(updater, "latest_commit", latest)
+    monkeypatch.setattr(updater, "apply_update", apply)
+    monkeypatch.setattr(updater, "save_notice", lambda *a: None)
+
+    monkeypatch.setattr(updater, "current_version", lambda: "abc1234567")
+    s = await send("/update")
+    assert any("eng so'nggi" in t for t in s.texts())
+    assert applied == []
+
+    monkeypatch.setattr(updater, "current_version", lambda: "old")
+    s = await send("/update")
+    assert applied == ["abc1234567"]
+    assert any("qayta ishga tushmoqda" in t for t in s.texts())
+
+    s = await send("/update", user=GUEST)
+    assert applied == ["abc1234567"]

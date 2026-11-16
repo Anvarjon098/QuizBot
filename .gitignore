@@ -8,3 +8,6 @@ __pycache__/
 *.db-wal
 *.db-shm
 *.log
+.version
+.update_notice
+.python

@@ -16,6 +16,8 @@ from .db import Database
 from .handlers import admin, common, create, fallback, play, stats
 from .middlewares import UserMiddleware
 from .runner import QuizManager
+from . import updater
+from html import escape
 
 
 def make_session() -> AiohttpSession:
@@ -40,6 +42,7 @@ ADMIN_COMMANDS = [
     BotCommand(command="help", description="Yordam"),
     BotCommand(command="namuna", description="Import uchun namuna fayllar"),
     BotCommand(command="backup", description="Bazaning zaxira nusxasi"),
+    BotCommand(command="update", description="Botni GitHub'dan yangilash"),
     BotCommand(command="cancel", description="Amalni bekor qilish"),
 ]
 
@@ -72,6 +75,20 @@ async def clear_old_menus(bot: Bot, db: Database, admin_ids: frozenset[int]) -> 
         await asyncio.sleep(0.05)
 
 
+async def notify_updated(bot: Bot) -> None:
+    """/update dan keyin qayta yonganda adminga xabar beradi."""
+    notice = updater.pop_notice()
+    if not notice:
+        return
+    try:
+        await bot.send_message(
+            notice["chat_id"],
+            f"✅ Bot yangilandi va ishlayapti!\n<code>{notice['sha'][:7]}</code> {escape(notice['message'])}",
+        )
+    except Exception:
+        logging.exception("Yangilanish haqida xabar yuborib bo'lmadi")
+
+
 async def on_error(event: ErrorEvent) -> bool:
     """Bot guruhdan chiqarilgan yoki foydalanuvchi uni bloklagan bo'lsa — uzun xato o'rniga bitta qator."""
     exc = event.exception
@@ -101,6 +118,7 @@ async def main() -> None:
 
     await setup_commands(bot, config.admin_ids)
     await clear_old_menus(bot, db, config.admin_ids)
+    await notify_updated(bot)
     try:
         await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
     finally:
