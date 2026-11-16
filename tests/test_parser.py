@@ -66,3 +66,52 @@ def test_unsupported_format():
     import pytest
     with pytest.raises(ValueError):
         parse_file("t.pdf", b"")
+
+
+# ---------- «#» / «+» formati ----------
+from bot.parser import SAMPLE_HASH_TXT
+
+
+def test_hash_sample():
+    r = parse_text(SAMPLE_HASH_TXT)
+    assert r.errors == []
+    assert [(q.text, q.options[q.correct]) for q in r.questions] == [
+        ("O'zbekistonning poytaxti qaysi shahar?", "Toshkent"),
+        ("7 × 8 nechaga teng?", "56"),
+        ("Eng katta okean qaysi?", "Tinch okeani"),
+    ]
+    assert r.questions[0].options == ["Toshkent", "Samarqand", "Buxoro", "Xiva"]
+
+
+def test_hash_variants_and_missing_plus():
+    text = (
+        "1. Matn bilan boshlangan\nikki qatorli savol?\nA) #bir\nB) ikki\n+\n"
+        "Uchinchi?\nx\ny #\n"          # oxirida «#», «+» yo'q
+        "To'rtinchi?\n#C# tili\nJava\n"  # «?» li qator yangi savolni boshlaydi; «C#» matni saqlanadi
+    )
+    r = parse_text(text)
+    assert r.errors == []
+    q1, q2, q3 = r.questions
+    assert q1.text == "Matn bilan boshlangan\nikki qatorli savol?"
+    assert q1.options == ["bir", "ikki"] and q1.correct == 0
+    assert q2.options == ["x", "y"] and q2.correct == 1
+    assert q3.options == ["C# tili", "Java"] and q3.correct == 0
+
+
+def test_hash_errors_and_no_question_mark():
+    text = "Javobsiz?\na\nb\n+\nIkki to'g'ri?\n#a\n#b\n+\nSavol belgisiz\n#ha\nyo'q\n+\n+\n"
+    r = parse_text(text)
+    assert [q.text for q in r.questions] == ["Savol belgisiz"]
+    assert len(r.errors) == 2
+    assert "belgilanmagan" in r.errors[0] and "bir nechta" in r.errors[1]
+
+
+def test_hash_docx():
+    import io
+    from docx import Document
+    d = Document()
+    for line in SAMPLE_HASH_TXT.splitlines():
+        d.add_paragraph(line)
+    buf = io.BytesIO(); d.save(buf)
+    r = parse_file("t.docx", buf.getvalue())
+    assert len(r.questions) == 3 and r.errors == []

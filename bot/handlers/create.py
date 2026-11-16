@@ -31,7 +31,7 @@ QUESTIONS_HINT = (
     "Endi savollarni qo'shing. Uch xil usul bor:\n\n"
     "1️⃣ «➕ Savol yaratish» tugmasini bosib, Telegram viktorinasini tuzing;\n"
     "2️⃣ savolni matn ko'rinishida yuboring:\n"
-    "<pre>Savol matni?\n+To'g'ri javob\n-Noto'g'ri javob\n-Noto'g'ri javob</pre>\n"
+    "<pre>Savol matni?\n#To'g'ri javob\nNoto'g'ri javob\nNoto'g'ri javob\n+</pre>\n"
     "3️⃣ savollar yozilgan faylni yuboring (.txt, .docx, .xlsx, .csv) — /namuna\n\n"
     "Barcha savollar qo'shilgach «✅ Tugatish» tugmasini bosing."
 )

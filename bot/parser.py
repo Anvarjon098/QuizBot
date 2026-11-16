@@ -50,9 +50,85 @@ def _letter_index(letter: str) -> int:
     return LATIN.index(letter) if letter in LATIN else CYRILLIC.index(letter)
 
 
+SEPARATOR_RE = re.compile(r"^\++$")
+TRAILING_HASH_RE = re.compile(r"\s+#+$")
+
+
 def parse_text(text: str) -> ParseResult:
+    """Matnni o'qiydi. Format avtomatik aniqlanadi: «#»/«+» formati yoki klassik format."""
+    lines = [l.strip() for l in text.splitlines()]
+    if any(SEPARATOR_RE.match(l) or l.startswith("#") for l in lines):
+        return _parse_hash(text)
+    return _parse_classic(text)
+
+
+def _parse_hash(text: str) -> ParseResult:
     """
-    Qo'llab-quvvatlanadigan formatlar (bir faylda aralash bo'lishi ham mumkin):
+    «#» formati:
+
+        O'zbekistonning poytaxti qaysi?     <- «?» belgisi bor qator — savol
+        #Toshkent                           <- «#» belgisi bor variant — to'g'ri javob
+        Samarqand
+        Buxoro
+        +                                   <- savol tugadi, keyingisi boshlanadi
+        7 × 8 nechaga teng?
+        54
+        #56
+        +
+
+    «+» qo'yilmasa ham, variantlardan keyin kelgan «?» li qator yangi savolni boshlaydi.
+    Savol matnida «?» bo'lmasa, blokning birinchi qatori savol deb olinadi.
+    """
+    def question_end(block: list[tuple[int, str]]) -> int | None:
+        return next((i for i, (_, l) in enumerate(block) if "?" in l), None)
+
+    blocks: list[list[tuple[int, str]]] = []
+    cur: list[tuple[int, str]] = []
+    for line_no, raw in enumerate(text.splitlines(), 1):
+        line = raw.strip()
+        if not line:
+            continue
+        if SEPARATOR_RE.match(line):
+            blocks.append(cur)
+            cur = []
+            continue
+        q_end = question_end(cur)
+        if "?" in line and q_end is not None and q_end < len(cur) - 1:
+            blocks.append(cur)
+            cur = []
+        cur.append((line_no, line))
+    blocks.append(cur)
+
+    drafts: list[_Draft] = []
+    for block in blocks:
+        if not block:
+            continue
+        q_end = question_end(block)
+        q_end = 0 if q_end is None else q_end
+        d = _Draft(block[0][0], question=[l for _, l in block[: q_end + 1]])
+        for _, line in block[q_end + 1:]:
+            if m := EXPL_RE.match(line):
+                d.explanation = m.group(1).strip()
+                continue
+            # «#Javob», «#A) Javob», «A) #Javob» va «Javob #» — hammasi to'g'ri javob belgisi
+            correct = line.startswith("#")
+            line = LETTER_PREFIX_RE.sub("", line.lstrip("#").strip())
+            if line.startswith("#"):
+                correct = True
+                line = line.lstrip("#").strip()
+            if TRAILING_HASH_RE.search(line):
+                correct = True
+                line = TRAILING_HASH_RE.sub("", line)
+            if correct:
+                d.correct.append(len(d.options))
+            d.options.append(line)
+        drafts.append(d)
+    return _drafts_to_result(drafts)
+
+
+def _parse_classic(text: str) -> ParseResult:
+    """
+    Klassik formatlar (bir faylda aralash bo'lishi ham mumkin):
 
         1. Savol matni?             1. Savol matni?
         +To'g'ri javob              A) Variant
@@ -106,7 +182,10 @@ def parse_text(text: str) -> ParseResult:
             cur = _Draft(line_no)
         cur.question.append(line)
     flush()
+    return _drafts_to_result(drafts)
 
+
+def _drafts_to_result(drafts: list[_Draft]) -> ParseResult:
     result = ParseResult()
     for n, d in enumerate(drafts, 1):
         where = f"{n}-savol ({d.line_no}-qator)"
@@ -221,6 +300,25 @@ def parse_file(filename: str, data: bytes) -> ParseResult:
 
 
 # ---------- namuna fayllar ----------
+
+SAMPLE_HASH_TXT = """O'zbekistonning poytaxti qaysi shahar?
+#Toshkent
+Samarqand
+Buxoro
+Xiva
++
+7 × 8 nechaga teng?
+54
+#56
+58
+64
++
+Eng katta okean qaysi?
+Atlantika okeani
+Hind okeani
+#Tinch okeani
++
+"""
 
 SAMPLE_TXT = """1. O'zbekistonning poytaxti qaysi shahar?
 +Toshkent

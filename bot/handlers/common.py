@@ -5,7 +5,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import BufferedInputFile, Message
 
 from ..keyboards import BTN_CANCEL, BTN_HELP, main_menu
-from ..parser import SAMPLE_TXT, sample_xlsx
+from ..parser import SAMPLE_HASH_TXT, SAMPLE_TXT, sample_xlsx
 
 router = Router()
 router.message.filter(F.chat.type == ChatType.PRIVATE)
@@ -28,7 +28,17 @@ HELP = (
     "  2) savolni matn ko'rinishida yuborish (format quyida);\n"
     "  3) fayl yuborish (.txt, .docx, .xlsx, .csv).\n\n"
     "<b>📥 Fayldan import</b> — barcha savollarni bitta fayldan yuklash.\n\n"
-    "<b>Matn formati:</b>\n"
+    "<b>Matn formati (asosiy):</b>\n"
+    "<pre>Savol matni?\n"
+    "#To'g'ri javob\n"
+    "Noto'g'ri javob\n"
+    "Noto'g'ri javob\n"
+    "+\n"
+    "Keyingi savol?\n"
+    "...</pre>\n"
+    "«?» bor qator — savol, «+» gacha bo'lgan qatorlar — javoblar, "
+    "«#» belgisi qo'yilgani — to'g'ri javob, «+» — keyingi savolga o'tish.\n\n"
+    "<b>Boshqa matn formatlari:</b>\n"
     "<pre>1. Savol matni?\n"
     "+To'g'ri javob\n"
     "-Noto'g'ri javob\n"
@@ -74,8 +84,13 @@ async def help_(message: Message) -> None:
 @router.message(Command("namuna"))
 async def samples(message: Message) -> None:
     await message.answer_document(
-        BufferedInputFile(SAMPLE_TXT.encode("utf-8"), "namuna.txt"),
-        caption="📄 Matn formatidagi namuna (.txt yoki Word uchun ham shu format)",
+        BufferedInputFile(SAMPLE_HASH_TXT.encode("utf-8"), "namuna.txt"),
+        caption="📄 Asosiy format: «?» — savol, «#» — to'g'ri javob, «+» — keyingi savol "
+                "(Word fayl uchun ham shu format)",
+    )
+    await message.answer_document(
+        BufferedInputFile(SAMPLE_TXT.encode("utf-8"), "namuna_2.txt"),
+        caption="📄 Boshqa matn formatlari («+/-», «A) *B)», «Javob: C»)",
     )
     await message.answer_document(
         BufferedInputFile(sample_xlsx(), "namuna.xlsx"),

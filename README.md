@@ -47,7 +47,29 @@ python -m bot
 
 ## Fayl formatlari
 
-**Matn (`.txt`, `.docx`, yoki to'g'ridan-to'g'ri xabar sifatida):**
+**Asosiy matn formati (`.txt`, `.docx`, yoki to'g'ridan-to'g'ri xabar sifatida):**
+
+```
+O'zbekistonning poytaxti qaysi?
+#Toshkent
+Samarqand
+Buxoro
++
+7 × 8 nechaga teng?
+54
+#56
++
+```
+
+- `?` belgisi bor qator savol bo'ladi.
+- Savoldan keyin `+` gacha bo'lgan qatorlar javob variantlari.
+- `#` qo'yilgan variant to'g'ri javob. `#` qatorning boshida yoki oxirida (bo'sh joydan keyin) turishi mumkin.
+- `+` savolni tugatadi. Uni qo'ymasangiz ham bo'ladi: variantlardan keyin kelgan `?` li qator yangi savolni boshlaydi.
+- Savol matnida `?` bo'lmasa, blokning birinchi qatori savol deb olinadi.
+
+Faylda `#` bilan boshlanadigan yoki faqat `+` dan iborat qator bo'lsa, bot shu formatni ishlatadi. Aks holda quyidagi boshqa formatlar bilan o'qiladi.
+
+**Boshqa matn formatlari:**
 
 ```
 1. Savol matni?
