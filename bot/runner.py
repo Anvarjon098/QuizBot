@@ -162,6 +162,9 @@ class QuizManager:
                     explanation=_cut(q.explanation, POLL_EXPLANATION_MAX) if q.explanation else None,
                     is_anonymous=False,
                     open_period=s.quiz.open_period,
+                    # savol matni oddiy matn: "<", ">" , "&" belgilari HTML deb o'qilmasin
+                    question_parse_mode=None,
+                    explanation_parse_mode=None,
                 )
             except TelegramRetryAfter as e:
                 log.warning("Telegram cheklovi (chat %s): %s s kutamiz", s.chat_id, e.retry_after)

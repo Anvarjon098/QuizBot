@@ -255,6 +255,9 @@ async def test_send_poll_retries_and_skips(tmp_path, monkeypatch):
         await asyncio.wait_for(s.task, 5)
         assert s.stop_reason is None
         assert s.shown == 2 and s.skipped == 1
+        # "<" belgili savollar HTML deb o'qilmasligi kerak
+        kw = bot.send_poll.call_args.kwargs
+        assert kw["question_parse_mode"] is None and kw["explanation_parse_mode"] is None
         assert "o'tkazib yuborildi" in bot.send_message.call_args_list[-1].args[1]
     finally:
         await db.close()
