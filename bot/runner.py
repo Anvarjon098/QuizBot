@@ -8,6 +8,9 @@ from dataclasses import dataclass, field
 from html import escape
 
 from aiogram import Bot
+from aiogram.exceptions import (
+    TelegramBadRequest, TelegramNetworkError, TelegramRetryAfter, TelegramServerError,
+)
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, PollAnswer, ReplyKeyboardRemove
 
 from .db import Database
@@ -19,6 +22,14 @@ log = logging.getLogger(__name__)
 
 INACTIVE_LIMIT = 2  # shaxsiy chatda ketma-ket javobsiz savollar soni
 PAUSE_AFTER_ANSWER = 1.5  # izohni o'qib olish uchun
+SEND_ATTEMPTS = 6  # tarmoq uzilsa, savolni qayta yuborish urinishlari
+POLL_QUESTION_MAX = 300  # Telegram cheklovlari
+POLL_OPTION_MAX = 100
+POLL_EXPLANATION_MAX = 200
+
+
+def _cut(text: str, limit: int) -> str:
+    return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
 @dataclass
@@ -41,7 +52,8 @@ class Session:
     shown: int = 0
     sent_at: float = 0.0
     answered: asyncio.Event = field(default_factory=asyncio.Event)
-    stop_reason: str | None = None  # None | manual | inactive
+    stop_reason: str | None = None  # None | manual | inactive | update | error
+    skipped: int = 0  # Telegram rad etgan savollar
     task: asyncio.Task | None = None
 
 
@@ -136,6 +148,36 @@ class QuizManager:
 
     # ---------- asosiy sikl ----------
 
+    async def _send_poll(self, bot: Bot, s: Session, q: Question, i: int, total: int):
+        """Savolni yuboradi. Tarmoq uzilishi va Telegram cheklovlarida kutib, qayta urinadi.
+        Telegram savolni rad etsa (noto'g'ri ma'lumot) — None qaytaradi."""
+        for attempt in range(1, SEND_ATTEMPTS + 1):
+            try:
+                return await bot.send_poll(
+                    chat_id=s.chat_id,
+                    question=_cut(f"[{i}/{total}] {q.text}", POLL_QUESTION_MAX),
+                    options=[_cut(o, POLL_OPTION_MAX) for o in q.options],
+                    type="quiz",
+                    correct_option_id=q.correct,
+                    explanation=_cut(q.explanation, POLL_EXPLANATION_MAX) if q.explanation else None,
+                    is_anonymous=False,
+                    open_period=s.quiz.open_period,
+                )
+            except TelegramRetryAfter as e:
+                log.warning("Telegram cheklovi (chat %s): %s s kutamiz", s.chat_id, e.retry_after)
+                await asyncio.sleep(e.retry_after + 1)
+            except (TelegramNetworkError, TelegramServerError) as e:
+                if attempt == SEND_ATTEMPTS:
+                    raise
+                log.warning("Savolni yuborib bo'lmadi (chat %s, urinish %s): %s", s.chat_id, attempt, e)
+                await asyncio.sleep(min(2 * attempt, 10))
+            except TelegramBadRequest as e:
+                if "chat not found" in e.message.lower():
+                    raise
+                log.error("Savol rad etildi (quiz %s, savol %s): %s", s.quiz.id, q.id, e.message)
+                return None
+        raise RuntimeError("Savolni yuborib bo'lmadi")
+
     async def _run(self, bot: Bot, s: Session) -> None:
         loop = asyncio.get_running_loop()
         missed = 0
@@ -153,18 +195,12 @@ class QuizManager:
             await asyncio.sleep(2)
             total = len(s.questions)
             for i, q in enumerate(s.questions, 1):
-                msg = await bot.send_poll(
-                    chat_id=s.chat_id,
-                    question=f"[{i}/{total}] {q.text}",
-                    options=q.options,
-                    type="quiz",
-                    correct_option_id=q.correct,
-                    explanation=q.explanation or None,
-                    is_anonymous=False,
-                    open_period=s.quiz.open_period,
-                )
+                msg = await self._send_poll(bot, s, q, i, total)
+                if msg is None:  # Telegram bu savolni qabul qilmadi — o'tkazib yuboramiz
+                    s.skipped += 1
+                    continue
                 current_msg_id = msg.message_id
-                s.shown = i
+                s.shown += 1
                 s.sent_at = loop.time()
                 s.answered.clear()
                 self.polls[msg.poll.id] = (s, q)
@@ -230,7 +266,8 @@ class QuizManager:
             "update": "🔧 Bot yangilanishi sababli test to'xtatildi. Natijangiz saqlandi — "
                       "bir daqiqadan keyin qayta ishlashingiz mumkin.",
             "inactive": f"⏸ Siz ketma-ket {INACTIVE_LIMIT} ta savolga javob bermadingiz, test to'xtatildi.",
-            "error": "⚠️ Texnik xato tufayli test to'xtatildi.",
+            "error": "⚠️ Telegram bilan aloqa uzilgani sababli test to'xtatildi. "
+                     "Javob berilgan savollar natijasi saqlandi.",
         }.get(s.stop_reason or "", "🏁 Test yakunlandi!")
         title = f"<b>{escape(s.quiz.title)}</b>"
         username = (await bot.me()).username
@@ -262,6 +299,8 @@ class QuizManager:
             f"❌ Noto'g'ri: <b>{answered - score}</b>",
             f"⌛️ Javobsiz: <b>{s.shown - answered}</b>",
         ]
+        if s.skipped:
+            lines.append(f"⚠️ Telegram qabul qilmagan savollar: <b>{s.skipped}</b> (o'tkazib yuborildi)")
         if p and answered:
             lines.append(f"⏱ Sarflangan vaqt: <b>{fmt_duration(p.time)}</b>")
             board = await self.db.quiz_leaderboard(s.quiz.id)

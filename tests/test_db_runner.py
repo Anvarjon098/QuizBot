@@ -216,3 +216,45 @@ async def test_on_idle_called_after_last_quiz(tmp_path):
         assert "yangilanishi sababli" in last.args[1]
     finally:
         await db.close()
+
+
+async def test_send_poll_retries_and_skips(tmp_path, monkeypatch):
+    """Tarmoq uzilsa savol qayta yuboriladi; Telegram rad etgan savol o'tkazib yuboriladi."""
+    import asyncio
+    from unittest.mock import AsyncMock, MagicMock
+    from aiogram.exceptions import TelegramBadRequest, TelegramNetworkError
+    from aiogram.methods import SendPoll
+    from bot import runner
+    from bot.models import Question
+    from bot.runner import QuizManager
+    monkeypatch.setattr(runner, "PAUSE_AFTER_ANSWER", 0)
+    real_sleep = asyncio.sleep
+    monkeypatch.setattr(runner.asyncio, "sleep", lambda *_a, **_k: real_sleep(0))
+
+    db = Database(str(tmp_path / "r.db"))
+    await db.connect()
+    try:
+        quiz = await db.create_quiz(1, "T", "", 10, False, False,
+                                    [Question(f"Q{i}?", ["a", "b"], 0) for i in range(3)])
+        qs = await db.get_questions(quiz.id)
+        m = SendPoll(chat_id=1, question="q", options=["a", "b"])
+        results = [
+            TelegramNetworkError(m, "timeout"),          # 1-savol: uzilish, keyin muvaffaqiyat
+            MagicMock(message_id=1, poll=MagicMock(id="p1")),
+            TelegramBadRequest(m, "Bad Request: poll question length must not exceed 300"),  # 2-savol rad
+            MagicMock(message_id=3, poll=MagicMock(id="p3")),
+        ]
+        bot = MagicMock()
+        bot.send_poll = AsyncMock(side_effect=results)
+        bot.send_message = AsyncMock()
+        bot.me = AsyncMock(return_value=MagicMock(username="b"))
+        mgr = QuizManager(db)
+        monkeypatch.setattr(runner, "INACTIVE_LIMIT", 99)
+        quiz.open_period = 0  # har savol ~1 soniya kutadi
+        s = mgr.start(bot, 10, quiz, qs, 1, is_group=False)
+        await asyncio.wait_for(s.task, 5)
+        assert s.stop_reason is None
+        assert s.shown == 2 and s.skipped == 1
+        assert "o'tkazib yuborildi" in bot.send_message.call_args_list[-1].args[1]
+    finally:
+        await db.close()
