@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 
 # Telegram quiz-poll cheklovlari (savol oldiga "[12/100] " qo'shiladi, shuning uchun 300 emas)
 QUESTION_MAX = 280
-OPTION_MAX = 100
+OPTION_MAX = 200  # 100 dan uzunlari pollda A/B/C harflari bilan ko'rsatiladi
 OPTIONS_MIN = 2
 OPTIONS_MAX = 10
 EXPLANATION_MAX = 200

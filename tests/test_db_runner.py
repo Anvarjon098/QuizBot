@@ -261,3 +261,45 @@ async def test_send_poll_retries_and_skips(tmp_path, monkeypatch):
         assert "o'tkazib yuborildi" in bot.send_message.call_args_list[-1].args[1]
     finally:
         await db.close()
+
+
+def test_poll_payload_long_options():
+    from bot.models import Question, validate_question
+    from bot.runner import QuizManager
+    short = Question("2+2?", ["3", "4"], 1)
+    assert QuizManager.poll_payload(short, 1, 5) == (None, "[1/5] 2+2?", ["3", "4"])
+
+    long_opt = "x" * 150 + " <b>"
+    q = Question("Qaysi to'g'ri?", ["qisqa", long_opt, "uch"], 1)
+    assert validate_question(q) is None  # 200 gacha ruxsat
+    intro, question, options = QuizManager.poll_payload(q, 2, 5)
+    assert options == ["A", "B", "C"]
+    assert question.startswith("[2/5] Qaysi to'g'ri?")
+    assert "<b>B)</b> " + "x" * 150 + " &lt;b&gt;" in intro  # to'liq matn, HTML ekranlangan
+
+    too_long = Question("Q?", ["y" * 201, "z"], 0)
+    assert "juda uzun" in validate_question(too_long)
+
+
+async def test_long_options_sent_as_text_then_letters(tmp_path):
+    import asyncio
+    from unittest.mock import AsyncMock, MagicMock
+    from bot.models import Question
+    from bot.runner import QuizManager
+    db = Database(str(tmp_path / "l.db"))
+    await db.connect()
+    try:
+        quiz = await db.create_quiz(1, "T", "", 10, False, False,
+                                    [Question("Uzun?", ["a" * 180, "b" * 120], 0)])
+        quiz.open_period = 0
+        bot = MagicMock()
+        bot.send_message = AsyncMock()
+        bot.send_poll = AsyncMock(return_value=MagicMock(message_id=1, poll=MagicMock(id="p")))
+        bot.me = AsyncMock(return_value=MagicMock(username="b"))
+        s = QuizManager(db).start(bot, 10, quiz, await db.get_questions(quiz.id), 1, is_group=False)
+        await asyncio.wait_for(s.task, 10)
+        texts = [c.args[1] for c in bot.send_message.call_args_list]
+        assert any("a" * 180 in t for t in texts)
+        assert bot.send_poll.call_args.kwargs["options"] == ["A", "B"]
+    finally:
+        await db.close()

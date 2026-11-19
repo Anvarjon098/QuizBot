@@ -102,7 +102,7 @@ Birinchi qator sarlavha bo'lsa, u o'tkazib yuboriladi. Sarlavhasi «Izoh» bo'lg
 
 **Telegram cheklovlari:**
 - savol uzunligi 280 belgigacha;
-- 2 tadan 10 tagacha variant, har biri 100 belgigacha;
+- 2 tadan 10 tagacha variant, har biri 200 belgigacha (100 dan uzun bo‘lsa, savol va javoblar alohida xabarda chiqadi, pollda esa A, B, C… harflari bo‘ladi);
 - izoh 200 belgigacha;
 - bitta testda 200 tagacha savol.
 

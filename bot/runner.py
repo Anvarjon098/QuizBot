@@ -26,6 +26,7 @@ SEND_ATTEMPTS = 6  # tarmoq uzilsa, savolni qayta yuborish urinishlari
 POLL_QUESTION_MAX = 300  # Telegram cheklovlari
 POLL_OPTION_MAX = 100
 POLL_EXPLANATION_MAX = 200
+LETTERS = "ABCDEFGHIJ"
 
 
 def _cut(text: str, limit: int) -> str:
@@ -148,15 +149,39 @@ class QuizManager:
 
     # ---------- asosiy sikl ----------
 
+    @staticmethod
+    def poll_payload(q: Question, i: int, total: int) -> tuple[str | None, str, list[str]]:
+        """(oldindan yuboriladigan matn yoki None, poll savoli, poll variantlari).
+
+        Telegram poll varianti 100, savoli 300 belgidan oshmasligi kerak. Uzunroq bo'lsa,
+        to'liq matn alohida xabarda yuboriladi, pollda esa A, B, C... harflari qoladi."""
+        head = f"[{i}/{total}] "
+        long_options = any(len(o) > POLL_OPTION_MAX for o in q.options)
+        long_question = len(head + q.text) > POLL_QUESTION_MAX
+        if not long_options and not long_question:
+            return None, head + q.text, list(q.options)
+        letters = [LETTERS[k] for k in range(len(q.options))]
+        lines = [f"<b>{head}</b>{escape(q.text)}", ""]
+        lines += [f"<b>{letter})</b> {escape(o)}" for letter, o in zip(letters, q.options)]
+        poll_question = head + ("Savol va javoblar yuqorida 👆" if long_question
+                                else f"{q.text}\n(javoblar yuqorida 👆)")
+        if len(poll_question) > POLL_QUESTION_MAX:
+            poll_question = head + "Savol va javoblar yuqorida 👆"
+        return "\n".join(lines), poll_question, letters
+
     async def _send_poll(self, bot: Bot, s: Session, q: Question, i: int, total: int):
         """Savolni yuboradi. Tarmoq uzilishi va Telegram cheklovlarida kutib, qayta urinadi.
         Telegram savolni rad etsa (noto'g'ri ma'lumot) — None qaytaradi."""
+        intro, question, options = self.poll_payload(q, i, total)
         for attempt in range(1, SEND_ATTEMPTS + 1):
             try:
+                if intro is not None:
+                    await bot.send_message(s.chat_id, intro)
+                    intro = None  # qayta urinishda takrorlanmasin
                 return await bot.send_poll(
                     chat_id=s.chat_id,
-                    question=_cut(f"[{i}/{total}] {q.text}", POLL_QUESTION_MAX),
-                    options=[_cut(o, POLL_OPTION_MAX) for o in q.options],
+                    question=question,
+                    options=options,
                     type="quiz",
                     correct_option_id=q.correct,
                     explanation=_cut(q.explanation, POLL_EXPLANATION_MAX) if q.explanation else None,
