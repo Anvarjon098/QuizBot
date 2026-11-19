@@ -177,7 +177,16 @@ def _parse_hash(lines: Lines) -> ParseResult:
                 d.correct.append(len(d.options))
             d.options.append(line)
         drafts.append(d)
+    if drafts:
+        _drop_preamble(drafts[0])
     return _drafts_to_result(drafts)
+
+
+def _drop_preamble(d: "_Draft") -> None:
+    """Fayl boshidagi izoh matnini («Жами 143 та савол. Тўғри жавоблар ...») birinchi savoldan ajratadi:
+    savoldan oldingi, nuqta yoki undov bilan tugagan qatorlar savolga qo'shilmaydi."""
+    while len(d.question) > 1 and d.question[0].rstrip().endswith((".", "!", "…")):
+        d.question.pop(0)
 
 
 def _parse_classic(lines: Lines) -> ParseResult:

@@ -169,3 +169,16 @@ def test_question_mark_answer_after_correct_answer():
     r = parse_text("Poytaxt qaysi?\n#Toshkent\nBilmayman?\nSamarqand\n+\n")
     assert r.errors == []
     assert r.questions[0].options == ["Toshkent", "Bilmayman?", "Samarqand"]
+
+
+def test_file_preamble_is_not_part_of_first_question():
+    text = (
+        "Жами 143 та савол. Тўғри жавоблар қизил рангдагилари. Тўғри жавобни дарров топиб олиш мумкин.\n"
+        "“Qurilishni tashkil etish” fanining asosiy predmeti nimadan iborat?\n"
+        "#Rejaga muvofiq tashkil etish\nHisoblash\n+\n"
+        "Matn bilan boshlangan\nikki qatorli savol?\n#A\nB\n+\n"
+    )
+    r = parse_text(text)
+    assert r.errors == []
+    assert r.questions[0].text == "“Qurilishni tashkil etish” fanining asosiy predmeti nimadan iborat?"
+    assert r.questions[1].text == "Matn bilan boshlangan\nikki qatorli savol?"

@@ -40,6 +40,10 @@ class PlayCB(CallbackData, prefix="pl"):
     quiz_id: int
 
 
+class ResumeCB(CallbackData, prefix="rs"):
+    quiz_id: int
+
+
 class LobbyCB(CallbackData, prefix="lb"):
     action: str  # ready | go
 

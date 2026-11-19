@@ -50,6 +50,13 @@ CREATE TABLE IF NOT EXISTS answers (
     question_id INTEGER NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
     is_correct  INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS progress (
+    user_id     INTEGER NOT NULL,
+    quiz_id     INTEGER NOT NULL REFERENCES quizzes(id) ON DELETE CASCADE,
+    data        TEXT NOT NULL,
+    updated_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (user_id, quiz_id)
+);
 CREATE INDEX IF NOT EXISTS idx_questions_quiz ON questions(quiz_id, position);
 CREATE INDEX IF NOT EXISTS idx_attempts_quiz ON attempts(quiz_id);
 CREATE INDEX IF NOT EXISTS idx_attempts_user ON attempts(user_id);
@@ -282,6 +289,31 @@ class Database:
         )
         await self.conn.commit()
         return attempt_id
+
+    async def delete_attempt(self, attempt_id: int) -> None:
+        await self.conn.execute("DELETE FROM attempts WHERE id = ?", (attempt_id,))
+        await self.conn.commit()
+
+    # ---------- to'xtatilgan testni davom ettirish ----------
+
+    async def save_progress(self, user_id: int, quiz_id: int, data: dict) -> None:
+        await self.conn.execute(
+            "INSERT INTO progress (user_id, quiz_id, data) VALUES (?, ?, ?) "
+            "ON CONFLICT(user_id, quiz_id) DO UPDATE SET data = excluded.data, updated_at = CURRENT_TIMESTAMP",
+            (user_id, quiz_id, json.dumps(data, ensure_ascii=False)),
+        )
+        await self.conn.commit()
+
+    async def get_progress(self, user_id: int, quiz_id: int) -> dict | None:
+        cur = await self.conn.execute(
+            "SELECT data FROM progress WHERE user_id = ? AND quiz_id = ?", (user_id, quiz_id)
+        )
+        row = await cur.fetchone()
+        return json.loads(row["data"]) if row else None
+
+    async def delete_progress(self, user_id: int, quiz_id: int) -> None:
+        await self.conn.execute("DELETE FROM progress WHERE user_id = ? AND quiz_id = ?", (user_id, quiz_id))
+        await self.conn.commit()
 
     async def quiz_leaderboard(self, quiz_id: int) -> list[aiosqlite.Row]:
         """Har bir o'yinchining eng yaxshi urinishi, o'rin bo'yicha tartiblangan."""

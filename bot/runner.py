@@ -14,7 +14,7 @@ from aiogram.exceptions import (
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, PollAnswer, ReplyKeyboardRemove
 
 from .db import Database
-from .keyboards import PlayCB, group_link, share_link
+from .keyboards import PlayCB, ResumeCB, group_link, share_link
 from .models import Question, Quiz
 from .views import fmt_duration, place_mark
 
@@ -55,6 +55,8 @@ class Session:
     answered: asyncio.Event = field(default_factory=asyncio.Event)
     stop_reason: str | None = None  # None | manual | inactive | update | error
     skipped: int = 0  # Telegram rad etgan savollar
+    start_at: int = 0  # davom ettirilganda: shu indeksdagi savoldan boshlanadi
+    prev_attempt_id: int | None = None  # davom ettirilganda: oldingi qisman urinish (almashtiriladi)
     task: asyncio.Task | None = None
 
 
@@ -103,9 +105,25 @@ class QuizManager:
 
     def start(self, bot: Bot, chat_id: int, quiz: Quiz, questions: list[Question],
               launcher_id: int, is_group: bool) -> Session:
+        session = Session(chat_id, quiz, prepare_questions(quiz, questions), launcher_id, is_group)
+        return self._launch(bot, session)
+
+    def resume(self, bot: Bot, chat_id: int, quiz: Quiz, progress: dict, user_id: int, name: str) -> Session:
+        """To'xtatilgan testni saqlangan joyidan davom ettiradi (savollar tartibi o'sha-o'sha)."""
+        questions = [Question.from_dict(d) for d in progress["questions"]]
+        session = Session(chat_id, quiz, questions, user_id, is_group=False,
+                          start_at=progress["position"], prev_attempt_id=progress.get("attempt_id"))
+        session.shown = progress["position"]
+        session.participants[user_id] = Participant(
+            user_id, name, score=progress["score"], time=progress["time"],
+            answers={int(k): v for k, v in progress["answers"].items()},
+        )
+        return self._launch(bot, session)
+
+    def _launch(self, bot: Bot, session: Session) -> Session:
+        chat_id = session.chat_id
         if chat_id in self.sessions:
             raise RuntimeError("Bu chatda test allaqachon ketmoqda")
-        session = Session(chat_id, quiz, prepare_questions(quiz, questions), launcher_id, is_group)
         self.sessions[chat_id] = session
         self.lobbies.pop(chat_id, None)
         session.task = asyncio.create_task(self._run(bot, session))
@@ -211,18 +229,23 @@ class QuizManager:
         missed = 0
         current_msg_id: int | None = None
         try:
+            intro = (
+                f"▶️ <b>{escape(s.quiz.title)}</b> testi davom etmoqda!\n"
+                f"🖊 {s.start_at + 1}-savoldan · jami {len(s.questions)} ta · "
+                if s.start_at else
+                f"🏁 <b>{escape(s.quiz.title)}</b> testi boshlanmoqda!\n"
+                f"🖊 {len(s.questions)} ta savol · "
+            )
             await bot.send_message(
                 s.chat_id,
-                f"🏁 <b>{escape(s.quiz.title)}</b> testi boshlanmoqda!\n"
-                f"🖊 {len(s.questions)} ta savol · ⏱ har biriga {s.quiz.open_period} soniya\n\n"
-                f"To'xtatish uchun: /stop",
+                intro + f"⏱ har biriga {s.quiz.open_period} soniya\n\nTo'xtatish uchun: /stop",
                 # oddiy foydalanuvchida eski menyu tugmalari qolgan bo'lsa, olib tashlanadi
                 reply_markup=ReplyKeyboardRemove()
                 if not s.is_group and s.launcher_id not in self.admin_ids else None,
             )
             await asyncio.sleep(2)
             total = len(s.questions)
-            for i, q in enumerate(s.questions, 1):
+            for i, q in enumerate(s.questions[s.start_at:], s.start_at + 1):
                 msg = await self._send_poll(bot, s, q, i, total)
                 if msg is None:  # Telegram bu savolni qabul qilmadi — o'tkazib yuboramiz
                     s.skipped += 1
@@ -279,15 +302,38 @@ class QuizManager:
 
     # ---------- natijalar ----------
 
+    async def _save_progress(self, s: Session, p: Participant | None, attempt_id: int | None) -> int | None:
+        """Shaxsiy chatda test oxirigacha bormay to'xtasa, davom ettirish uchun holatni saqlaydi.
+        Davom etiladigan savol indeksini qaytaradi (yoki None — test tugagan)."""
+        answered = p.answers if p else {}
+        last = max((i for i, q in enumerate(s.questions) if q.id in answered), default=s.start_at - 1)
+        position = max(last + 1, s.start_at) if answered else s.start_at
+        if s.stop_reason is None or position >= len(s.questions):
+            await self.db.delete_progress(s.launcher_id, s.quiz.id)
+            return None
+        await self.db.save_progress(s.launcher_id, s.quiz.id, {
+            "questions": [{**q.to_dict(), "id": q.id} for q in s.questions],
+            "position": position,
+            "score": p.score if p else 0,
+            "time": p.time if p else 0.0,
+            "answers": {str(k): v for k, v in answered.items()},
+            "attempt_id": attempt_id,
+        })
+        return position
+
     async def _finish(self, bot: Bot, s: Session) -> None:
         players = sorted(
             (p for p in s.participants.values() if p.answers),
             key=lambda p: (-p.score, p.time),
         )
+        attempt_ids: dict[int, int] = {}
+        if s.prev_attempt_id is not None:  # davom ettirilgan test — eski qisman urinish almashtiriladi
+            await self.db.delete_attempt(s.prev_attempt_id)
         for p in players:
-            await self.db.save_attempt(
+            attempt_ids[p.user_id] = await self.db.save_attempt(
                 s.quiz.id, p.user_id, s.chat_id, p.score, s.shown, p.time, p.answers
             )
+        total_q = len(s.questions)
 
         header = {
             "manual": "⏹ Test to'xtatildi.",
@@ -305,7 +351,7 @@ class QuizManager:
             if not players:
                 lines.append("Hech kim qatnashmadi 🤷")
             else:
-                lines.append(f"🖊 {s.shown} ta savol · 👥 {len(players)} ishtirokchi\n")
+                lines.append(f"🖊 {s.shown} / {total_q} ta savol · 👥 {len(players)} ishtirokchi\n")
                 for i, p in enumerate(players[:20]):
                     lines.append(
                         f"{place_mark(i)} {escape(p.name)} — <b>{p.score}</b> "
@@ -321,8 +367,10 @@ class QuizManager:
         p = s.participants.get(s.launcher_id)
         score = p.score if p else 0
         answered = len(p.answers) if p else 0
-        lines = [
-            header, title, "",
+        lines = [header, title, "", f"📋 Jami savollar: <b>{total_q}</b>"]
+        if s.shown < total_q:
+            lines.append(f"🖊 Ishlangan: <b>{s.shown}</b>")
+        lines += [
             f"✅ To'g'ri: <b>{score}</b>",
             f"❌ Noto'g'ri: <b>{answered - score}</b>",
             f"⌛️ Javobsiz: <b>{s.shown - answered}</b>",
@@ -335,10 +383,14 @@ class QuizManager:
             place = next((i for i, r in enumerate(board) if r["user_id"] == s.launcher_id), None)
             if place is not None:
                 lines.append(f"\n🏆 Ushbu testdagi o'rningiz: <b>{place + 1}</b> / {len(board)}")
-        rows = [
-            [InlineKeyboardButton(text="🔄 Qayta ishlash", callback_data=PlayCB(quiz_id=s.quiz.id).pack())],
-            [InlineKeyboardButton(text="👥 Guruhda o'tkazish", url=group_link(username, s.quiz))],
-        ]
+        rows = [[InlineKeyboardButton(text="🔄 Qayta ishlash", callback_data=PlayCB(quiz_id=s.quiz.id).pack())]]
+        position = await self._save_progress(s, p, attempt_ids.get(s.launcher_id))
+        if position is not None:
+            rows.append([InlineKeyboardButton(
+                text=f"▶️ Davom etish ({position + 1}/{total_q})",
+                callback_data=ResumeCB(quiz_id=s.quiz.id).pack(),
+            )])
+        rows.append([InlineKeyboardButton(text="👥 Guruhda o'tkazish", url=group_link(username, s.quiz))])
         if s.launcher_id in self.admin_ids:  # «Ulashish» faqat adminlarga
             rows.append([InlineKeyboardButton(text="📤 Ulashish", url=share_link(username, s.quiz))])
         kb = InlineKeyboardMarkup(inline_keyboard=rows)

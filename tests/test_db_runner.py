@@ -303,3 +303,68 @@ async def test_long_options_sent_as_text_then_letters(tmp_path):
         assert bot.send_poll.call_args.kwargs["options"] == ["A", "B"]
     finally:
         await db.close()
+
+
+async def test_stop_then_resume_continues_and_replaces_attempt(tmp_path, monkeypatch):
+    import asyncio
+    from unittest.mock import AsyncMock, MagicMock
+    from aiogram.types import PollAnswer, User
+    from bot import runner
+    from bot.models import Question
+    from bot.runner import QuizManager
+    monkeypatch.setattr(runner, "PAUSE_AFTER_ANSWER", 0)
+
+    db = Database(str(tmp_path / "res.db"))
+    await db.connect()
+    try:
+        quiz = await db.create_quiz(1, "T", "", 10, False, False,
+                                    [Question(f"Q{i}?", ["a", "b"], 0) for i in range(4)])
+        quiz.open_period = 0
+        qs = await db.get_questions(quiz.id)
+        polls = iter(range(100))
+        bot = MagicMock()
+        bot.send_message = AsyncMock()
+        bot.send_poll = AsyncMock(side_effect=lambda **kw: MagicMock(message_id=1, poll=MagicMock(id=f"p{next(polls)}")))
+        bot.stop_poll = AsyncMock()
+        bot.me = AsyncMock(return_value=MagicMock(username="b"))
+        user = User(id=7, is_bot=False, first_name="Ali")
+        mgr = QuizManager(db)
+
+        async def answer_current(option):
+            for _ in range(200):
+                if mgr.polls:
+                    break
+                await asyncio.sleep(0.01)
+            pid = next(iter(mgr.polls))
+            await mgr.handle_answer(PollAnswer(poll_id=pid, user=user, option_ids=[option]))
+
+        # 1-savolga to'g'ri javob, keyin /stop
+        s = mgr.start(bot, 7, quiz, qs, 7, is_group=False)
+        await answer_current(0)
+        while s.shown < 2:
+            await asyncio.sleep(0.01)
+        mgr.stop(7)
+        await asyncio.wait_for(s.task, 5)
+        last_text = bot.send_message.call_args_list[-1].args[1]
+        kb = bot.send_message.call_args_list[-1].kwargs["reply_markup"].inline_keyboard
+        assert "📋 Jami savollar: <b>4</b>" in last_text
+        assert kb[1][0].text == "▶️ Davom etish (2/4)"
+        progress = await db.get_progress(7, quiz.id)
+        assert progress["position"] == 1 and progress["score"] == 1
+
+        # davom ettirish: 2-savoldan boshlanadi, qolganlariga javob beramiz
+        s2 = mgr.resume(bot, 7, quiz, progress, 7, "Ali")
+        assert s2.shown == 1
+        for _ in range(3):
+            await answer_current(0)
+            await asyncio.sleep(0.05)
+        await asyncio.wait_for(s2.task, 5)
+        text = bot.send_message.call_args_list[-1].args[1]
+        assert "Test yakunlandi" in text and "✅ To'g'ri: <b>4</b>" in text
+        assert await db.get_progress(7, quiz.id) is None
+        board = await db.quiz_leaderboard(quiz.id)
+        cur = await db.conn.execute("SELECT COUNT(*) FROM attempts")
+        assert (await cur.fetchone())[0] == 1  # qisman urinish almashtirildi
+        assert board[0]["score"] == 4 and board[0]["total"] == 4
+    finally:
+        await db.close()

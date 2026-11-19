@@ -11,7 +11,8 @@ from aiogram.types import CallbackQuery, Message, PollAnswer, ReplyKeyboardRemov
 
 from ..config import Config
 from ..db import Database
-from ..keyboards import LobbyCB, PlayCB, lobby_kb, main_menu, owner_kb, play_kb, guest_kb
+from ..keyboards import LobbyCB, PlayCB, ResumeCB, lobby_kb, main_menu, owner_kb, play_kb, guest_kb
+from aiogram.types import InlineKeyboardButton
 from ..runner import Lobby, QuizManager
 from ..views import quiz_card
 
@@ -56,9 +57,15 @@ async def open_quiz_private(message: Message, command: CommandObject, state: FSM
     await message.answer("Test topildi 👇", reply_markup=menu)
     username = (await bot.me()).username
     if not is_admin:
-        await message.answer(quiz_card(quiz), reply_markup=guest_kb(username, quiz))
-        return
-    kb = owner_kb(username, quiz) if quiz.owner_id == message.from_user.id else play_kb(username, quiz)
+        kb = guest_kb(username, quiz)
+    else:
+        kb = owner_kb(username, quiz) if quiz.owner_id == message.from_user.id else play_kb(username, quiz)
+    progress = await db.get_progress(message.from_user.id, quiz.id)
+    if progress:
+        kb.inline_keyboard.insert(1, [InlineKeyboardButton(
+            text=f"▶️ Davom etish ({progress['position'] + 1}/{len(progress['questions'])})",
+            callback_data=ResumeCB(quiz_id=quiz.id).pack(),
+        )])
     await message.answer(quiz_card(quiz), reply_markup=kb)
 
 
@@ -157,8 +164,36 @@ async def play(call: CallbackQuery, callback_data: PlayCB, db: Database, manager
         await call.answer("Bu testda savollar yo'q.", show_alert=True)
         return
     await state.clear()
+    await db.delete_progress(call.from_user.id, quiz.id)  # boshidan boshlanadi
     await call.answer("Boshladik! 🚀")
     manager.start(bot, chat_id, quiz, questions, call.from_user.id, is_group=False)
+
+
+@router.callback_query(ResumeCB.filter())
+async def resume(call: CallbackQuery, callback_data: ResumeCB, db: Database, manager: QuizManager,
+                 bot: Bot, state: FSMContext) -> None:
+    if call.message.chat.type != ChatType.PRIVATE:
+        await call.answer()
+        return
+    chat_id = call.message.chat.id
+    if manager.is_running(chat_id):
+        await call.answer("Avval joriy testni tugating yoki /stop buyrug'ini yuboring.", show_alert=True)
+        return
+    if manager.updating:
+        await call.answer(UPDATING_TEXT, show_alert=True)
+        return
+    quiz = await db.get_quiz(callback_data.quiz_id)
+    if not quiz:
+        await call.answer("Bu test o'chirilgan.", show_alert=True)
+        return
+    progress = await db.get_progress(call.from_user.id, quiz.id)
+    if not progress:
+        await call.answer("Davom ettirish uchun saqlangan holat yo'q. «🔄 Qayta ishlash» ni bosing.",
+                          show_alert=True)
+        return
+    await state.clear()
+    await call.answer("Davom etamiz! ▶️")
+    manager.resume(bot, chat_id, quiz, progress, call.from_user.id, call.from_user.full_name)
 
 
 # ---------- to'xtatish ----------
