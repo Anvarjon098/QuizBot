@@ -55,6 +55,13 @@ TRAILING_HASH_RE = re.compile(r"\s+#+$")
 
 
 ANSWER_DIVIDER_RE = re.compile(r"\s*={3,}\s*")
+# Word/Telegram'dan nusxalanganda qo'shilib qoladigan ko'rinmas belgilar
+INVISIBLE_RE = re.compile("[\u200b\u200c\u200d\u2060\ufeff\u00ad]")
+_CHAR_FIXES = str.maketrans({"\uff03": "#", "\uff1f": "?", "\uff0b": "+", "\u00a0": " ", "\u202f": " "})
+
+
+def _normalize(raw: str) -> str:
+    return INVISIBLE_RE.sub("", raw.translate(_CHAR_FIXES))
 
 Lines = list[tuple[int, str]]  # (qator raqami, matn)
 
@@ -67,6 +74,7 @@ def _split_lines(text: str) -> Lines:
     """
     lines: Lines = []
     for line_no, raw in enumerate(text.splitlines(), 1):
+        raw = _normalize(raw)
         if not ANSWER_DIVIDER_RE.search(raw):
             lines.append((line_no, raw.strip()))
             continue
@@ -80,6 +88,12 @@ def parse_text(text: str) -> ParseResult:
     if any(SEPARATOR_RE.match(l) or l.startswith("#") for _, l in lines):
         return _parse_hash(lines)
     return _parse_classic(lines)
+
+
+def _is_marked(line: str) -> bool:
+    """Qator «#» bilan to'g'ri javob deb belgilanganmi («#Javob», «A) #Javob», «Javob #»)."""
+    rest = LETTER_PREFIX_RE.sub("", line.lstrip("#").strip())
+    return line.startswith("#") or rest.startswith("#") or bool(TRAILING_HASH_RE.search(rest))
 
 
 def _parse_hash(lines: Lines) -> ParseResult:
@@ -103,17 +117,37 @@ def _parse_hash(lines: Lines) -> ParseResult:
     def question_end(block: list[tuple[int, str]]) -> int | None:
         return next((i for i, (_, l) in enumerate(block) if "?" in l), None)
 
+    # «+» ajratgichli faylda «?» belgili qator yangi savolni faqat shunda boshlaydi:
+    # joriy savolda to'g'ri javob allaqachon bor va bu qatordan keyin (keyingi «+» gacha)
+    # «#» belgili variant ham keladi. Aks holda «Bilmayman?» kabi javoblar savolni bo'lib yuborardi.
+    has_separators = any(SEPARATOR_RE.match(l) for _, l in lines)
+
+    def starts_new_question(idx: int, cur: list[tuple[int, str]]) -> bool:
+        q_end = question_end(cur)
+        if "?" not in lines[idx][1] or q_end is None or q_end >= len(cur) - 1:
+            return False
+        if not has_separators:
+            return True
+        if not any(_is_marked(l) for _, l in cur[q_end + 1:]):
+            return False
+        following = []
+        for _, l in lines[idx + 1:]:
+            if SEPARATOR_RE.match(l):
+                break
+            if l:
+                following.append(l)
+        return len(following) >= 2 and any(_is_marked(l) for l in following)
+
     blocks: list[list[tuple[int, str]]] = []
     cur: list[tuple[int, str]] = []
-    for line_no, line in lines:
+    for idx, (line_no, line) in enumerate(lines):
         if not line:
             continue
         if SEPARATOR_RE.match(line):
             blocks.append(cur)
             cur = []
             continue
-        q_end = question_end(cur)
-        if "?" in line and q_end is not None and q_end < len(cur) - 1:
+        if starts_new_question(idx, cur):
             blocks.append(cur)
             cur = []
         cur.append((line_no, line))
@@ -207,8 +241,10 @@ def _parse_classic(lines: Lines) -> ParseResult:
 def _drafts_to_result(drafts: list[_Draft]) -> ParseResult:
     result = ParseResult()
     for n, d in enumerate(drafts, 1):
-        where = f"{n}-savol ({d.line_no}-qator)"
         text_ = NUMBER_RE.sub("", "\n".join(d.question)).strip()
+        snippet = " ".join(text_.split())
+        snippet = snippet if len(snippet) <= 40 else snippet[:40] + "…"
+        where = f"{n}-savol ({d.line_no}-qator" + (f", «{snippet}»)" if snippet else ")")
         correct = d.correct
         if d.letter_answer:
             idx = _letter_index(d.letter_answer)

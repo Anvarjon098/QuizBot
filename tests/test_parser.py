@@ -140,3 +140,32 @@ def test_equals_dividers_classic_and_rows():
 def test_header_detection_is_strict():
     assert len(parse_rows([["Savol nima?", "ha", "yo'q"]]).questions) == 1
     assert len(parse_rows([["Savollar", "To'g'ri", "Xato"], ["A?", "ha", "yo'q"]]).questions) == 1
+
+
+def test_hash_format_answer_with_question_mark_is_not_split():
+    text = "Qaysi biri to'g'ri?\nBilmayman?\n#Toshkent\nSamarqand\n+\nIkkinchi savol?\n#Ha\nYo'q\n+\n"
+    r = parse_text(text)
+    assert r.errors == []
+    assert len(r.questions) == 2
+    assert r.questions[0].options == ["Bilmayman?", "Toshkent", "Samarqand"]
+    assert r.questions[0].correct == 1
+
+
+def test_hash_format_invisible_chars_and_fullwidth_hash():
+    text = "﻿Savol?\n​#To'g'ri\nNoto'g'ri\n+\nIkkinchi？\n＃Ha javob\nYo'q\n+\n"
+    r = parse_text(text)
+    assert r.errors == []
+    assert [q.options[q.correct] for q in r.questions] == ["To'g'ri", "Ha javob"]
+
+
+def test_long_question_allowed_and_error_shows_snippet():
+    long_q = "Uzun savol " + "x" * 400 + "?"
+    r = parse_text(f"{long_q}\n#A\nB\n+\nJavobsiz savol?\nA\nB\n+\n")
+    assert len(r.questions) == 1 and len(r.questions[0].text) > 300
+    assert len(r.errors) == 1 and "«Javobsiz savol?»" in r.errors[0]
+
+
+def test_question_mark_answer_after_correct_answer():
+    r = parse_text("Poytaxt qaysi?\n#Toshkent\nBilmayman?\nSamarqand\n+\n")
+    assert r.errors == []
+    assert r.questions[0].options == ["Toshkent", "Bilmayman?", "Samarqand"]

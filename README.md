@@ -101,7 +101,7 @@ To'g'ri javobni «*» bilan belgilash o'rniga oxiriga `Javob: B` qatorini yozish
 Birinchi qator sarlavha bo'lsa, u o'tkazib yuboriladi. Sarlavhasi «Izoh» bo'lgan ustun izoh sifatida o'qiladi.
 
 **Telegram cheklovlari:**
-- savol uzunligi 280 belgigacha;
+- savol uzunligi 1000 belgigacha (300 dan uzun savol alohida xabarda chiqadi);
 - 2 tadan 10 tagacha variant, har biri 200 belgigacha (100 dan uzun bo‘lsa, savol va javoblar alohida xabarda chiqadi, pollda esa A, B, C… harflari bo‘ladi);
 - izoh 200 belgigacha;
 - bitta testda 200 tagacha savol.
