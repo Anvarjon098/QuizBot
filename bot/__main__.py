@@ -13,7 +13,7 @@ from aiogram.types import ErrorEvent, BotCommand, BotCommandScopeChat, BotComman
 
 from .config import load_config
 from .db import Database
-from .handlers import admin, common, create, fallback, play, stats
+from .handlers import admin, common, create, fallback, inline, play, stats
 from .middlewares import UserMiddleware
 from .runner import QuizManager
 from . import updater
@@ -114,7 +114,7 @@ async def main() -> None:
     dp.update.outer_middleware(UserMiddleware(db))
     dp.errors.register(on_error)
     # Tartib muhim: deep link /start va /stop birinchi, keyin umumiy buyruqlar va bekor qilish.
-    dp.include_routers(play.router, common.router, admin.router, create.router, stats.router, fallback.router)
+    dp.include_routers(inline.router, play.router, common.router, admin.router, create.router, stats.router, fallback.router)
 
     await setup_commands(bot, config.admin_ids)
     await clear_old_menus(bot, db, config.admin_ids)

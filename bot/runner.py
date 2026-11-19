@@ -14,7 +14,7 @@ from aiogram.exceptions import (
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, PollAnswer, ReplyKeyboardRemove
 
 from .db import Database
-from .keyboards import PlayCB, ResumeCB, group_link, share_link
+from .keyboards import PlayCB, ResumeCB, group_link, share_button
 from .models import Question, Quiz
 from .views import fmt_duration, place_mark
 
@@ -392,6 +392,6 @@ class QuizManager:
             )])
         rows.append([InlineKeyboardButton(text="👥 Guruhda o'tkazish", url=group_link(username, s.quiz))])
         if s.launcher_id in self.admin_ids:  # «Ulashish» faqat adminlarga
-            rows.append([InlineKeyboardButton(text="📤 Ulashish", url=share_link(username, s.quiz))])
+            rows.append([share_button(s.quiz)])
         kb = InlineKeyboardMarkup(inline_keyboard=rows)
         await bot.send_message(s.chat_id, "\n".join(lines), reply_markup=kb)

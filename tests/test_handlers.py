@@ -12,7 +12,7 @@ from aiogram.types import CallbackQuery, Chat, Message, Update, User
 
 from bot.config import Config
 from bot.db import Database
-from bot.handlers import admin, common, create, fallback, play, stats
+from bot.handlers import admin, common, create, fallback, inline, play, stats
 from bot.middlewares import UserMiddleware
 from bot.runner import QuizManager
 
@@ -61,7 +61,7 @@ async def env(tmp_path):
     dp = Dispatcher(storage=MemoryStorage(), db=db, manager=mgr,
                     config=Config("42:TEST", frozenset({1}), ""))
     dp.update.outer_middleware(UserMiddleware(db))
-    routers = (play.router, common.router, admin.router, create.router, stats.router, fallback.router)
+    routers = (inline.router, play.router, common.router, admin.router, create.router, stats.router, fallback.router)
     for r in routers:  # modul darajasidagi routerlarni oldingi testdagi dispatcher'dan ajratish
         r._parent_router = None
     dp.include_routers(*routers)
@@ -84,6 +84,15 @@ async def env(tmp_path):
         return session
 
     send.manager = mgr
+
+    async def inline_query(text, user=ME):
+        from aiogram.types import InlineQuery
+        session.calls.clear()
+        iq = InlineQuery(id="iq", from_user=user, query=text, offset="")
+        await dp.feed_update(bot, Update(update_id=next(upd), inline_query=iq))
+        return session
+
+    send.inline = inline_query
     try:
         yield db, send, press
     finally:
@@ -325,3 +334,25 @@ async def test_admin_panel_update_and_backup_buttons(env, monkeypatch):
     # mehmon uchun bu tugmalar ishlamaydi
     s = await press(AdminCB(action="backup").pack(), user=GUEST)
     assert not any(isinstance(c, SendDocument) for c in s.calls)
+
+
+
+async def test_inline_quiz_card(env):
+    from aiogram.methods import AnswerInlineQuery
+    from bot.models import Question
+    db, send, _ = env
+    quiz = await db.create_quiz(1, "Binolar kommunikatsiyasi", "", 30, False, False,
+                                [Question("Q?", ["a", "b"], 0), Question("W?", ["a", "b"], 1)])
+
+    s = await send.inline(f"quiz:{quiz.code}", user=GUEST)  # kod bilan — hamma uchun
+    ans = next(c for c in s.calls if isinstance(c, AnswerInlineQuery))
+    assert len(ans.results) == 1
+    r = ans.results[0]
+    assert r.title == "Binolar kommunikatsiyasi" and r.description == "2 ta savol · 30 son"
+    assert "🎲 Test «<b>Binolar kommunikatsiyasi</b>»" in r.input_message_content.message_text
+    assert r.reply_markup.inline_keyboard[0][0].url.endswith(f"?start=quiz_{quiz.code}")
+
+    s = await send.inline("Binolar", user=GUEST)  # nom bo'yicha qidiruv faqat adminga
+    assert next(c for c in s.calls if isinstance(c, AnswerInlineQuery)).results == []
+    s = await send.inline("Binolar")
+    assert len(next(c for c in s.calls if isinstance(c, AnswerInlineQuery)).results) == 1

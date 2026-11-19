@@ -237,6 +237,14 @@ class Database:
         row = await cur.fetchone()
         return self._row_to_quiz(row) if row else None
 
+    async def search_quizzes(self, text: str, limit: int = 20) -> list[Quiz]:
+        """Nomi bo'yicha qidiradi (bo'sh matn — eng yangi testlar)."""
+        cur = await self.conn.execute(
+            self._QUIZ_SELECT + " WHERE q.title LIKE ? ORDER BY q.id DESC LIMIT ?",
+            (f"%{text}%", limit),
+        )
+        return [self._row_to_quiz(r) for r in await cur.fetchall()]
+
     async def get_questions(self, quiz_id: int) -> list[Question]:
         cur = await self.conn.execute(
             "SELECT * FROM questions WHERE quiz_id = ? ORDER BY position", (quiz_id,)

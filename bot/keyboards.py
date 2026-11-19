@@ -75,6 +75,19 @@ def share_link(bot_username: str, quiz: Quiz) -> str:
     )
 
 
+def share_button(quiz: Quiz) -> InlineKeyboardButton:
+    """Chat tanlab, test kartochkasini inline rejimda yuborish (@bot quiz:KOD)."""
+    return InlineKeyboardButton(text="📤 Ulashish", switch_inline_query=f"quiz:{quiz.code}")
+
+
+def card_kb(bot_username: str, quiz: Quiz) -> InlineKeyboardMarkup:
+    """Inline rejimda yuborilgan test kartochkasi tugmalari."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="▶️ Testni boshlash", url=quiz_link(bot_username, quiz))],
+        [InlineKeyboardButton(text="👥 Guruhda o'tkazish", url=group_link(bot_username, quiz))],
+    ])
+
+
 # ---------- reply klaviaturalar ----------
 def main_menu() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
@@ -146,7 +159,7 @@ def play_kb(bot_username: str, quiz: Quiz) -> InlineKeyboardMarkup:
         inline_keyboard=[
             [InlineKeyboardButton(text="▶️ Testni boshlash", callback_data=PlayCB(quiz_id=quiz.id).pack())],
             [InlineKeyboardButton(text="👥 Guruhda o'tkazish", url=group_link(bot_username, quiz))],
-            [InlineKeyboardButton(text="📤 Ulashish", url=share_link(bot_username, quiz))],
+            [share_button(quiz)],
         ]
     )
 

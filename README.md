@@ -180,3 +180,9 @@ Skript botni `/opt/quizbot` papkasiga o'rnatadi va `quizbot` systemd xizmatini y
 | `/update` | GitHub'dagi yangi kodni o'rnatadi. Testlar ketayotgan bo'lsa — ular tugashini kutadi (shu orada yangi testlar boshlanmaydi), keyin o'zi yangilanib xabar beradi |
 | `/update majburiy` | ketayotgan testlarni darhol yakunlaydi (natijalar saqlanadi, ishtirokchilarga xabar boradi) va yangilanadi |
 | `/update bekor` | navbatdagi yangilanishni bekor qiladi |
+
+## 📤 Inline rejim (testni istalgan chatga ulashish)
+
+BotFather'da bir marta yoqiladi: `/setinline` → botni tanlang → yordamchi matn, masalan `quiz:KOD`.
+
+Istalgan chatda `@BotUsername quiz:KOD` yozilsa, test kartochkasi chiqadi («🎲 Test «Nomi»», savollar soni, vaqt, «▶️ Testni boshlash» va «👥 Guruhda o'tkazish» tugmalari). «📤 Ulashish» tugmasi ham shu usulda ishlaydi. Admin `@BotUsername` dan keyin test nomini yozib ham qidira oladi.
