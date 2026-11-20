@@ -65,12 +65,12 @@ async def clear_old_menus(bot: Bot, db: Database, admin_ids: frozenset[int]) -> 
                 user_id,
                 "🔄 Bot yangilandi. Testni ishlash uchun sizga yuborilgan test havolasini oching.",
                 reply_markup=ReplyKeyboardRemove(),
+                request_timeout=15,
             )
         except TelegramForbiddenError:
             await db.set_can_message(user_id, False)
-        except Exception:
-            logging.exception("Foydalanuvchi %s menyusini tozalab bo'lmadi", user_id)
-            continue
+        except Exception as e:  # bir marta urinamiz — har ishga tushishda qayta-qayta kutib qolmaslik uchun
+            logging.warning("Foydalanuvchi %s menyusini tozalab bo'lmadi: %s", user_id, e)
         await db.mark_menu_cleared(user_id)
         await asyncio.sleep(0.05)
 
@@ -87,6 +87,19 @@ async def notify_updated(bot: Bot) -> None:
         )
     except Exception:
         logging.exception("Yangilanish haqida xabar yuborib bo'lmadi")
+
+
+async def startup_tasks(bot: Bot, db: Database, admin_ids: frozenset[int]) -> None:
+    await asyncio.sleep(1)  # avval polling boshlansin
+    for name, coro in (
+        ("buyruqlar menyusi", setup_commands(bot, admin_ids)),
+        ("yangilanish xabari", notify_updated(bot)),
+        ("eski menyularni tozalash", clear_old_menus(bot, db, admin_ids)),
+    ):
+        try:
+            await asyncio.wait_for(coro, timeout=300)
+        except Exception as e:
+            logging.warning("Ishga tushish vazifasi bajarilmadi (%s): %s", name, e)
 
 
 async def on_error(event: ErrorEvent) -> bool:
@@ -116,12 +129,12 @@ async def main() -> None:
     # Tartib muhim: deep link /start va /stop birinchi, keyin umumiy buyruqlar va bekor qilish.
     dp.include_routers(inline.router, play.router, common.router, admin.router, create.router, stats.router, fallback.router)
 
-    await setup_commands(bot, config.admin_ids)
-    await clear_old_menus(bot, db, config.admin_ids)
-    await notify_updated(bot)
+    # Ishga tushish ishlari fonda bajariladi: Telegram sekin javob bersa ham bot darhol xabarlarni qabul qiladi
+    startup = asyncio.create_task(startup_tasks(bot, db, config.admin_ids))
     try:
         await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
     finally:
+        startup.cancel()
         await manager.shutdown()
         await db.close()
         await bot.session.close()
