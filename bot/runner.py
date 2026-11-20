@@ -16,7 +16,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, PollAnswer
 from .db import Database
 from .keyboards import PlayCB, ResumeCB, group_link, share_button
 from .models import Question, Quiz
-from .views import fmt_duration, place_mark
+from .views import fmt_duration, fmt_duration_long, place_mark, rank_text
 
 log = logging.getLogger(__name__)
 
@@ -367,22 +367,31 @@ class QuizManager:
         p = s.participants.get(s.launcher_id)
         score = p.score if p else 0
         answered = len(p.answers) if p else 0
-        lines = [header, title, "", f"📋 Jami savollar: <b>{total_q}</b>"]
-        if s.shown < total_q:
-            lines.append(f"🖊 Ishlangan: <b>{s.shown}</b>")
-        lines += [
-            f"✅ To'g'ri: <b>{score}</b>",
-            f"❌ Noto'g'ri: <b>{answered - score}</b>",
-            f"⌛️ Javobsiz: <b>{s.shown - answered}</b>",
+        name = f"“{escape(s.quiz.title)}”"
+        head = {
+            "manual": f"⏹ {name} testi to‘xtatildi.",
+            "update": f"🔧 {name} testi bot yangilanishi sababli to‘xtatildi.",
+            "inactive": f"⏸ {name} testi to‘xtatildi: siz ketma-ket {INACTIVE_LIMIT} ta savolga javob bermadingiz.",
+            "error": f"⚠️ {name} testi Telegram bilan aloqa uzilgani sababli to‘xtatildi.",
+        }.get(s.stop_reason or "", f"🏁 {name} testi yakunlandi!")
+        of_total = f" (jami {total_q} tadan)" if s.shown < total_q else ""
+        lines = [
+            head, "",
+            f"<i>Siz <b>{s.shown}</b> ta savolga javob berdingiz{of_total}:</i>", "",
+            f"✅ To‘g‘ri – <b>{score}</b>",
+            f"❌ Xato – <b>{answered - score}</b>",
+            f"⌛️ Tashlab ketilgan – <b>{s.shown - answered}</b>",
         ]
-        if s.skipped:
-            lines.append(f"⚠️ Telegram qabul qilmagan savollar: <b>{s.skipped}</b> (o'tkazib yuborildi)")
         if p and answered:
-            lines.append(f"⏱ Sarflangan vaqt: <b>{fmt_duration(p.time)}</b>")
+            lines.append(f"⏱ {fmt_duration_long(p.time)}")
+        if s.skipped:
+            lines.append(f"⚠️ Telegram qabul qilmagan savollar – <b>{s.skipped}</b>")
+        if p and answered:
             board = await self.db.quiz_leaderboard(s.quiz.id)
             place = next((i for i, r in enumerate(board) if r["user_id"] == s.launcher_id), None)
             if place is not None:
-                lines.append(f"\n🏆 Ushbu testdagi o'rningiz: <b>{place + 1}</b> / {len(board)}")
+                lines += ["", rank_text(place, len(board))]
+            lines += ["", "<i>Bu testni yana ishlashingiz mumkin — reytingda eng yaxshi natijangiz hisobga olinadi.</i>"]
         rows = [[InlineKeyboardButton(text="🔄 Qayta ishlash", callback_data=PlayCB(quiz_id=s.quiz.id).pack())]]
         position = await self._save_progress(s, p, attempt_ids.get(s.launcher_id))
         if position is not None:

@@ -107,7 +107,7 @@ async def test_private_run_full(db, monkeypatch):
     bot, mgr, quiz = await run_private(db, [0, 1, 2, 2], monkeypatch)
     assert len(bot.polls) == 4
     assert bot.polls[0][1]["question"] == "[1/4] Q0?" and bot.polls[0][1]["is_anonymous"] is False
-    assert "To'g'ri: <b>3</b>" in bot.sent[-1] and "Test yakunlandi" in bot.sent[-1]
+    assert "To‘g‘ri – <b>3</b>" in bot.sent[-1] and "testi yakunlandi!" in bot.sent[-1]
     assert not mgr.sessions and not mgr.polls
     board = await db.quiz_leaderboard(quiz.id)
     assert board[0]["score"] == 3 and board[0]["total"] == 4
@@ -258,7 +258,7 @@ async def test_send_poll_retries_and_skips(tmp_path, monkeypatch):
         # "<" belgili savollar HTML deb o'qilmasligi kerak
         kw = bot.send_poll.call_args.kwargs
         assert kw["question_parse_mode"] is None and kw["explanation_parse_mode"] is None
-        assert "o'tkazib yuborildi" in bot.send_message.call_args_list[-1].args[1]
+        assert "Telegram qabul qilmagan savollar – <b>1</b>" in bot.send_message.call_args_list[-1].args[1]
     finally:
         await db.close()
 
@@ -347,7 +347,7 @@ async def test_stop_then_resume_continues_and_replaces_attempt(tmp_path, monkeyp
         await asyncio.wait_for(s.task, 5)
         last_text = bot.send_message.call_args_list[-1].args[1]
         kb = bot.send_message.call_args_list[-1].kwargs["reply_markup"].inline_keyboard
-        assert "📋 Jami savollar: <b>4</b>" in last_text
+        assert "Siz <b>2</b> ta savolga javob berdingiz (jami 4 tadan)" in last_text
         assert kb[1][0].text == "▶️ Davom etish (2/4)"
         progress = await db.get_progress(7, quiz.id)
         assert progress["position"] == 1 and progress["score"] == 1
@@ -360,7 +360,8 @@ async def test_stop_then_resume_continues_and_replaces_attempt(tmp_path, monkeyp
             await asyncio.sleep(0.05)
         await asyncio.wait_for(s2.task, 5)
         text = bot.send_message.call_args_list[-1].args[1]
-        assert "Test yakunlandi" in text and "✅ To'g'ri: <b>4</b>" in text
+        assert "testi yakunlandi!" in text and "✅ To‘g‘ri – <b>4</b>" in text
+        assert "(jami" not in text  # oxirigacha ishlanganda jami alohida ko'rsatilmaydi
         assert await db.get_progress(7, quiz.id) is None
         board = await db.quiz_leaderboard(quiz.id)
         cur = await db.conn.execute("SELECT COUNT(*) FROM attempts")
@@ -368,3 +369,15 @@ async def test_stop_then_resume_continues_and_replaces_attempt(tmp_path, monkeyp
         assert board[0]["score"] == 4 and board[0]["total"] == 4
     finally:
         await db.close()
+
+
+
+def test_result_format_helpers():
+    from bot.views import fmt_duration_long, rank_text
+    assert fmt_duration_long(50.5) == "50.5 soniya"
+    assert fmt_duration_long(185) == "3 daqiqa 5 soniya"
+    assert rank_text(0, 7) == ("7 tadan 🥇 <b>1-o‘rin</b>. Siz ushbu testda ishtirok etgan 100% "
+                               "odamlardan yuqoriroq ball to‘pladingiz.")
+    assert rank_text(3, 5) == ("5 tadan <b>4-o‘rin</b>. Siz ushbu testda ishtirok etgan 25% "
+                               "odamlardan yuqoriroq ball to‘pladingiz.")
+    assert "birinchi" in rank_text(0, 1)
