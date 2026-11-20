@@ -49,16 +49,18 @@ done
 RUN
 cat > "$DIR/start.sh" <<'S'
 #!/usr/bin/env bash
-# boshqa skript (masalan, server o'zi) ishga tushirgan nusxa bo'lsa ham ikkinchisi yoqilmaydi
-if pgrep -f "QuizBot/run.sh" >/dev/null || pgrep -f -- "python[0-9.]* -m bot$" >/dev/null; then
-  echo "Bot allaqachon ishlayapti."; exit 0
-fi
+# Faqat ~/QuizBot dagi botni boshqaradi (serverdagi boshqa botlarga tegmaydi)
+if pgrep -f "QuizBot/run.sh" >/dev/null; then echo "Bot allaqachon ishlayapti."; exit 0; fi
 setsid nohup bash "$HOME/QuizBot/run.sh" >/dev/null 2>&1 < /dev/null &
 echo "✅ Bot ishga tushdi. Jurnal: tail -f ~/QuizBot/bot.log"
 S
 cat > "$DIR/stop.sh" <<'S'
 #!/usr/bin/env bash
-pkill -f "QuizBot/run.sh"; pkill -f -- "-m bot$"
+# Faqat ~/QuizBot papkasida ishlayotgan botni to'xtatadi
+pkill -f "QuizBot/run.sh"
+for p in $(pgrep -f -- "-m bot$"); do
+  [ "$(readlink /proc/$p/cwd 2>/dev/null)" = "$HOME/QuizBot" ] && kill "$p"
+done
 echo "⏹ Bot to'xtatildi."
 S
 cat > "$DIR/update.sh" <<'S'
@@ -78,15 +80,9 @@ if command -v crontab >/dev/null 2>&1; then
 fi
 
 echo "==> 4/4 Bot ishga tushirilmoqda..."
-if pgrep -f -- "python[0-9.]* -m bot$" >/dev/null && ! pgrep -f "QuizBot/run.sh" >/dev/null; then
-  # botni boshqa skript yoqqan va o'zi qayta yoqadi — faqat qayta ishga tushiramiz
-  pkill -f -- "python[0-9.]* -m bot$" || true
-  echo "✅ Bot qayta ishga tushirilmoqda (uni server skripti yoqadi)."
-else
-  bash "$DIR/stop.sh" >/dev/null 2>&1 || true
-  sleep 1
-  bash "$DIR/start.sh"
-fi
+bash "$DIR/stop.sh" >/dev/null 2>&1 || true
+sleep 1
+bash "$DIR/start.sh"
 sleep 10
 tail -n 3 "$DIR/bot.log"
 echo
